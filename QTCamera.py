@@ -125,16 +125,25 @@ class QTCamera(QWidget):
         # Simple inline check for available cameras (indices 0-4)
         available_cameras = []
         for i in range(5):
-            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+            # Use default backend for checking to avoid warnings
+            cap = cv2.VideoCapture(i)
             if cap.isOpened():
                 available_cameras.append(i)
                 cap.release()
+        
+        # If no cameras found or requested camera not available, use first available
+        if not available_cameras:
+            raise RuntimeError("No cameras found")
         if self.camera_index not in available_cameras:
             self.camera_index = available_cameras[0]
         
+        # Now open with DirectShow for better performance on Windows
         self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
         if not self.cap.isOpened():
-            raise RuntimeError(f"Cannot open camera {self.camera_index}")
+            # Fallback to default backend if DirectShow fails
+            self.cap = cv2.VideoCapture(self.camera_index)
+            if not self.cap.isOpened():
+                raise RuntimeError(f"Cannot open camera {self.camera_index}")
 
         # Set camera properties
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)

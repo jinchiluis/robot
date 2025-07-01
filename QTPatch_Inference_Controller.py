@@ -8,8 +8,14 @@ from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFileDialog,
                                QPushButton, QLabel, QTextEdit, QStatusBar)
-from PySide6.QtMultimedia import QSoundEffect
-
+# Try to import QSoundEffect, handle missing DLLs or hardware gracefully
+try:
+    from PySide6.QtMultimedia import QSoundEffect
+    SOUND_AVAILABLE = True
+except ImportError as e:
+    QSoundEffect = None
+    SOUND_AVAILABLE = False
+    print(f"Warning: QSoundEffect not available: {e}")
 from QTCamera import QTCamera
 from patchcore_exth import SimplePatchCore
 from coordinate_transformer import CoordinateTransformer
@@ -112,10 +118,13 @@ class QTPatch_Inference_Controller(QMainWindow):
         QTimer.singleShot(0, self.auto_load_files)
        
         # Initialize sound
-        self.beep_sound = QSoundEffect()
-        self.beep_sound.setSource(QUrl.fromLocalFile("beep.mp3"))
-        self.beep_sound.setVolume(0.5)  # Adjust as needed
-        
+        if SOUND_AVAILABLE:
+            self.beep_sound = QSoundEffect()
+            self.beep_sound.setSource(QUrl.fromLocalFile("beep.mp3"))
+            self.beep_sound.setVolume(0.5)  # Adjust as needed
+        else:
+            self.beep_sound = None
+            
     def auto_load_files(self):
         """Automatically load model and calibration files from default folders."""
         # Check for PatchCore model file in "patchcore_models" folder
@@ -411,8 +420,9 @@ class QTPatch_Inference_Controller(QMainWindow):
                 # Color code the status
                 if is_anomaly:
                     self.anomaly_status_label.setStyleSheet("color: red; font-weight: bold;")
-                    # Play beep sound on anomaly
-                    self.beep_sound.play()
+                    # Play beep sound on anomaly if available
+                    if self.beep_sound:
+                        self.beep_sound.play()
                 else:
                     self.anomaly_status_label.setStyleSheet("color: green; font-weight: bold;")
         
