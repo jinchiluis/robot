@@ -18,6 +18,11 @@ tqdm
 streamlit
 pytorch         # from the pytorch channel (CUDA/CPU build as needed)
 torchvision     # match the PyTorch version
+scipy           # for spatial.distance, ndimage, etc.
+scikit-learn    # for KMeans, GaussianRandomProjection
+matplotlib      # for pyplot, cm
+PySide6         # for Qt GUI
+faiss-cpu       # for fast nearest neighbor search (optional, but recommended)
 
 # ------------------------------
 
