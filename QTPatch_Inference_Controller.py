@@ -8,14 +8,7 @@ from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFileDialog,
                                QPushButton, QLabel, QTextEdit, QStatusBar)
-# Try to import QSoundEffect, handle missing DLLs or hardware gracefully
-try:
-    from PySide6.QtMultimedia import QSoundEffect
-    SOUND_AVAILABLE = True
-except ImportError as e:
-    QSoundEffect = None
-    SOUND_AVAILABLE = False
-    print(f"Warning: QSoundEffect not available: {e}")
+from playsound import playsound
 from QTCamera import QTCamera
 from patchcore_exth import SimplePatchCore
 from coordinate_transformer import CoordinateTransformer
@@ -128,12 +121,8 @@ class QTPatch_Inference_Controller(QMainWindow):
         QTimer.singleShot(0, self.auto_load_files)
        
         # Initialize sound
-        if SOUND_AVAILABLE:
-            self.beep_sound = QSoundEffect()
-            self.beep_sound.setSource(QUrl.fromLocalFile("beep.mp3"))
-            self.beep_sound.setVolume(0.5)  # Adjust as needed
-        else:
-            self.beep_sound = None
+        # Remove QSoundEffect and use playsound
+        self.beep_sound_path = "beep.mp3"
             
     def auto_load_files(self):
         """Automatically load model and calibration files from default folders."""
@@ -431,8 +420,10 @@ class QTPatch_Inference_Controller(QMainWindow):
                 if is_anomaly:
                     self.anomaly_status_label.setStyleSheet("color: red; font-weight: bold;")
                     # Play beep sound on anomaly if available
-                    if self.beep_sound:
-                        self.beep_sound.play()
+                    try:
+                        playsound(self.beep_sound_path)
+                    except Exception as e:
+                        self.log(f"Beep sound failed: {e}")
                 else:
                     self.anomaly_status_label.setStyleSheet("color: green; font-weight: bold;")
         
