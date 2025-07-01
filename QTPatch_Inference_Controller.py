@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFileDialog,
                                QPushButton, QLabel, QTextEdit, QStatusBar)
-from playsound import playsound
+import pygame
 from QTCamera import QTCamera
 from patchcore_exth import SimplePatchCore
 from coordinate_transformer import CoordinateTransformer
@@ -120,9 +120,9 @@ class QTPatch_Inference_Controller(QMainWindow):
         # Auto-load model and calibration if available
         QTimer.singleShot(0, self.auto_load_files)
        
-        # Initialize sound
-        # Remove QSoundEffect and use playsound
-        self.beep_sound_path = "beep.mp3"
+        # Initialize sound using pygame
+        pygame.mixer.init()
+        self.sound = pygame.mixer.Sound("beep.mp3")
             
     def auto_load_files(self):
         """Automatically load model and calibration files from default folders."""
@@ -421,9 +421,9 @@ class QTPatch_Inference_Controller(QMainWindow):
                     self.anomaly_status_label.setStyleSheet("color: red; font-weight: bold;")
                     # Play beep sound on anomaly if available
                     try:
-                        playsound(self.beep_sound_path)
+                        self.sound.play()
                     except Exception as e:
-                        self.log(f"Beep sound failed: {e}")
+                        self.log(f"Sound playback failed: {e}")
                 else:
                     self.anomaly_status_label.setStyleSheet("color: green; font-weight: bold;")
         
