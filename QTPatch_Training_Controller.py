@@ -146,7 +146,7 @@ class QTPatch_Training_Controller(QMainWindow):
     def __init__(self, camera=None, calibration_data=None):
         super().__init__()
         self.setWindowTitle("PatchCore Training")
-        self.setGeometry(100, 0, 1000, 650)
+        self.setGeometry(100, 50, 1000, 650)
         
         # Data storage
         self.snapshots = []  # List of (filepath, thumbnail) tuples

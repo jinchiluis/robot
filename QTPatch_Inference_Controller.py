@@ -56,7 +56,7 @@ class QTPatch_Inference_Controller(QMainWindow):
         """
         super().__init__()
         self.setWindowTitle("QT PatchCore Inference Controller")
-        self.setGeometry(100, 0, 1000, 650)
+        self.setGeometry(100, 50, 1000, 650)
         
         # State management
         self.state = State.IDLE
