@@ -121,15 +121,25 @@ class QTCamera(QWidget):
         self.video_label.setScaledContents(False)  # We'll handle scaling manually
         
     def init_camera(self):
-        """Initialize the camera capture."""
-        self.cap = cv2.VideoCapture(self.camera_index)
+        """Initialize the camera capture. Checks available cameras first."""
+        # Simple inline check for available cameras (indices 0-4)
+        available_cameras = []
+        for i in range(5):
+            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+            if cap.isOpened():
+                available_cameras.append(i)
+                cap.release()
+        if self.camera_index not in available_cameras:
+            self.camera_index = available_cameras[0]
+        
+        self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
         if not self.cap.isOpened():
             raise RuntimeError(f"Cannot open camera {self.camera_index}")
-        
+
         # Set camera properties
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-        
+
         # Setup timer for frame updates
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_frame)
