@@ -474,7 +474,9 @@ class SimplePatchCore:
                area = stats[i, cv2.CC_STAT_AREA]
                if area >= min_region_size:
                    large_regions_exist = True
-                   break
+                   x, y, w, h = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP], stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+                   print(f"Region {i}: area={area} px, bbox=({x},{y},{w},{h})")
+                   #break #<- uncomment to stop after first large region and therefore speed up processing
            
            # Update anomaly decision based on region size
            if not large_regions_exist:
