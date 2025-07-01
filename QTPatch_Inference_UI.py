@@ -91,7 +91,7 @@ def setup_ui(controller):
     controller.heatmap_label.setMaximumWidth(250)
     #controller.heatmap_label.setScaledContents(True)
     controller.heatmap_label.setStyleSheet("border: 1px solid #ccc;")
-    controller.heatmap_label.setAlignment(Qt.AlignCenter)
+    controller.heatmap_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     anomaly_result_layout.addWidget(controller.heatmap_label)
 
     status_layout.addLayout(anomaly_result_layout)
