@@ -36,5 +36,5 @@ faiss-cpu       # for fast nearest neighbor search (optional, but recommended)
 
 # ------------------------------
 
-ultralytics            # YOLOv8 implementation
-streamlit-image-coordinates
+#ultralytics            # YOLOv8 implementation
+#streamlit-image-coordinates
