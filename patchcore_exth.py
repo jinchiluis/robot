@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Advanced PatchCore Implementation with Performance "Secrets" + Elegant Heatmap Integration
-These are the tricks that make PatchCore achieve 99.6% AUROC!
-Newest Version: GPU Pytorch for coreset sampling instead of FAISS + Seamless Heatmap
-  -> 25x faster + Beautiful anomaly visualization
+Advanced PatchCore Implementation with Performance Optimizations
+- PyTorch-based nearest neighbor search (replacing FAISS)
+- Optimized training with mixed precision and better data loading
+- Faster coreset sampling with GPU acceleration
 """
 
 import torch
@@ -20,19 +20,24 @@ import cv2
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy.ndimage import gaussian_filter
+from pathlib import Path
+from tqdm import tqdm
+import os
+import time
+
+# Optional import for backward compatibility
 try:
     import faiss
     FAISS_AVAILABLE = True
 except ImportError:
     FAISS_AVAILABLE = False
-    print("⚠️ FAISS not available - always using scipy for nearest neighbor search")
-from pathlib import Path
-from tqdm import tqdm
+
+# Import BackgroundMasker
 from bgmasker import BackgroundMasker
 
 
 class SimplePatchCore:
-    """Fixed PatchCore with consistent feature extraction"""
+    """Optimized PatchCore with PyTorch-based inference"""
     
     def __init__(self, backbone='wide_resnet50_2', device='cuda' if torch.cuda.is_available() else 'cpu', mask_method=None, mask_params=None):
         self.device = device
@@ -44,41 +49,49 @@ class SimplePatchCore:
             self.model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
             self.feature_layers = ['layer2', 'layer3']
         
-        # FIX 1: Replace BatchNorm with GroupNorm to avoid batch size effects
+        # Replace BatchNorm with GroupNorm to avoid batch size effects
         self._replace_batchnorm_with_groupnorm()
         
         # Setup feature extractor
         self.feature_extractor = self._setup_feature_extractor()
         self.model.to(device)
         self.model.eval()
+        
+        # Compile model for faster inference (PyTorch 2.0+)
+        if hasattr(torch, 'compile') and device == 'cuda':
+            try:
+                self.model = torch.compile(self.model, mode='reduce-overhead')
+                print("✓ Model compiled with torch.compile")
+            except:
+                print("⚠️ torch.compile not available or failed")
 
-        #masker
+        # Masker
         self.mask_method = mask_method
         self.mask_params = mask_params
         self.masker = BackgroundMasker() if mask_method else None
         
-        # FIX 2: Disable gradient computation and set to eval mode permanently
+        # Disable gradient computation
         for param in self.model.parameters():
             param.requires_grad = False
         
         # Storage
         self.memory_bank = None
+        self.memory_bank_torch = None  # PyTorch tensor version for fast inference
         self.global_threshold = None
         self.projection = None
-        self.faiss_index = None
+        self.faiss_index = None  # Kept for backward compatibility
         
-        # FIX 3: Store normalization parameters from training
+        # Store normalization parameters
         self.feature_mean = None
         self.feature_std = None
         
-        # Store feature map size for heatmap generation
+        # Store feature map size
         self.feature_map_size = None
         
         # Image preprocessing
         self.image_size = 512
         self.transform_train = transforms.Compose([
             transforms.Resize((self.image_size, self.image_size)),
-            #transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                                std=[0.229, 0.224, 0.225])
@@ -86,26 +99,22 @@ class SimplePatchCore:
         
         self.transform_test = transforms.Compose([
             transforms.Resize((self.image_size, self.image_size)),
-            #transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                                std=[0.229, 0.224, 0.225])
         ])
     
     def _replace_batchnorm_with_groupnorm(self):
-        """Replace BatchNorm layers with GroupNorm to avoid batch size dependency"""
-        # Actually, don't replace anything - just freeze the BatchNorm layers
+        """Freeze BatchNorm layers to avoid batch size dependency"""
         for module in self.model.modules():
             if isinstance(module, nn.BatchNorm2d):
                 module.eval()
-                # Freeze BatchNorm parameters
                 module.weight.requires_grad = False
                 module.bias.requires_grad = False
-                # Set momentum to 0 to prevent running stats updates
                 module.momentum = 0
     
     def _replace_batchnorm_recursive(self, module):
-        """Not used anymore - kept for compatibility"""
+        """Not used - kept for compatibility"""
         pass
     
     def _setup_feature_extractor(self):
@@ -117,7 +126,6 @@ class SimplePatchCore:
                 features[name] = output
             return hook
         
-        # Register hooks for multiple layers
         for name, module in self.model.named_modules():
             if name in self.feature_layers:
                 module.register_forward_hook(hook_fn(name))
@@ -125,36 +133,40 @@ class SimplePatchCore:
         return features
     
     def extract_features(self, images, return_spatial=False):
-        """Extract multi-scale features"""
+        """Optimized feature extraction with mixed precision"""
         features = []
         spatial_features = []
         
-        with torch.no_grad():
-            _ = self.model(images)
-            
-            reference_size = None
-            
-            for i, layer_name in enumerate(self.feature_layers):
-                layer_features = self.feature_extractor[layer_name]
-                b, c, h, w = layer_features.shape
+        # Use automatic mixed precision for faster computation
+        with torch.cuda.amp.autocast(enabled=(self.device == 'cuda')):
+            with torch.no_grad():
+                _ = self.model(images)
                 
-                if reference_size is None:
-                    reference_size = (h, w)
-                    self.feature_map_size = reference_size
+                reference_size = None
                 
-                if (h, w) != reference_size:
-                    layer_features = torch.nn.functional.interpolate(
-                        layer_features, 
-                        size=reference_size, 
-                        mode='bilinear', 
-                        align_corners=False
-                    )
-                
-                if return_spatial:
-                    spatial_features.append(layer_features)
-                
-                layer_features = layer_features.permute(0, 2, 3, 1).reshape(b, reference_size[0]*reference_size[1], c)
-                features.append(layer_features)
+                for i, layer_name in enumerate(self.feature_layers):
+                    layer_features = self.feature_extractor[layer_name]
+                    b, c, h, w = layer_features.shape
+                    
+                    if reference_size is None:
+                        reference_size = (h, w)
+                        self.feature_map_size = reference_size
+                    
+                    if (h, w) != reference_size:
+                        layer_features = torch.nn.functional.interpolate(
+                            layer_features, 
+                            size=reference_size, 
+                            mode='bilinear', 
+                            align_corners=False
+                        )
+                    
+                    if return_spatial:
+                        spatial_features.append(layer_features)
+                    
+                    # More efficient reshape
+                    layer_features = layer_features.permute(0, 2, 3, 1).contiguous()
+                    layer_features = layer_features.view(b, -1, c)
+                    features.append(layer_features)
         
         features = torch.cat(features, dim=-1)
         
@@ -165,81 +177,119 @@ class SimplePatchCore:
         return features
     
     def adaptive_sampling(self, features, sampling_ratio=0.01):
-        """K-center greedy sampling"""
+        """Optimized K-center greedy sampling with GPU acceleration"""
         n_samples = int(len(features) * sampling_ratio)
         if n_samples >= len(features):
             return np.arange(len(features))
         
-        print(f"🚀 PyTorch GPU coreset sampling: {len(features)} -> {n_samples}")
+        print(f"🚀 Fast GPU coreset sampling: {len(features)} -> {n_samples}")
         
+        # Convert to GPU tensor with appropriate precision
         if torch.cuda.is_available():
-            features_torch = torch.from_numpy(features).cuda()
-            device = 'cuda'
+            # Use float16 for large datasets, float32 for smaller ones
+            if len(features) > 100000:
+                features_torch = torch.from_numpy(features).half().cuda()
+                dtype = torch.float16
+            else:
+                features_torch = torch.from_numpy(features).float().cuda()
+                dtype = torch.float32
         else:
-            features_torch = torch.from_numpy(features)
-            device = 'cpu'
+            features_torch = torch.from_numpy(features).float()
+            dtype = torch.float32
         
         n_features = len(features)
         selected_indices = [np.random.randint(n_features)]
+        selected_mask = torch.zeros(n_features, dtype=torch.bool, device=features_torch.device)
         
-        min_distances = torch.full((n_features,), float('inf'), device=device)
+        # Pre-allocate distance matrix
+        min_distances = torch.full((n_features,), float('inf'), 
+                                 dtype=dtype,
+                                 device=features_torch.device)
         
-        for i in tqdm(range(n_samples - 1), desc="PyTorch coreset sampling"):
+        # Batch distance calculations
+        batch_size = 50000 if torch.cuda.is_available() else 10000
+        
+        for i in tqdm(range(n_samples - 1), desc="Fast coreset sampling"):
             new_center_idx = selected_indices[-1]
             new_center = features_torch[new_center_idx:new_center_idx+1]
             
-            distances = torch.cdist(features_torch, new_center).squeeze()
-            min_distances = torch.minimum(min_distances, distances)
+            # Calculate distances in batches
+            for start_idx in range(0, n_features, batch_size):
+                end_idx = min(start_idx + batch_size, n_features)
+                batch_features = features_torch[start_idx:end_idx]
+                
+                distances = torch.cdist(batch_features, new_center).squeeze()
+                min_distances[start_idx:end_idx] = torch.minimum(
+                    min_distances[start_idx:end_idx], 
+                    distances
+                )
             
-            temp_distances = min_distances.clone()
-            temp_distances[selected_indices] = -1
-            next_idx = torch.argmax(temp_distances).item()
+            # Mark selected indices
+            selected_mask[selected_indices] = True
+            
+            # Find next index
+            masked_distances = min_distances.clone()
+            masked_distances[selected_mask] = -1
+            next_idx = torch.argmax(masked_distances).item()
             selected_indices.append(next_idx)
         
         return np.array(selected_indices)
     
     def setup_faiss_index(self, features):
-        """Setup FAISS index"""
-        if not FAISS_AVAILABLE:
-            print("Using scipy instead of FAISS (slower but works)")
-            return None
-            
-        dimension = features.shape[1]
-        
-        if self.device == 'cuda' and faiss.get_num_gpus() > 0:
-            res = faiss.StandardGpuResources()
-            index = faiss.GpuIndexFlatL2(res, dimension)
-        else:
-            index = faiss.IndexFlatL2(dimension)
-        
-        index.add(features.astype(np.float32))
-        
-        return index
+        """Dummy method for backward compatibility"""
+        print("Note: FAISS index setup called but PyTorch inference is used instead")
+        return None
     
     def fit(self, train_dir, sample_ratio=0.01, threshold_percentile=99, val_dir=None):
-        """Train with all the secrets
-        
-        Args:
-            train_dir: Directory containing normal training images
-            sample_ratio: Percentage of patches to keep in memory bank... 1%: ~95% AUROC//10%: ~99% AUROC//25%: ~99.5% AUROC//50%: ~99.6% AUROC
-            threshold_percentile: Percentile for threshold calculation
-            val_dir: Optional separate validation directory. If None, uses train_dir=>DANGEROUS!
-        """
-        print(f"Training Advanced PatchCore on: {train_dir}")
+        """Optimized training with faster data loading and processing"""
+        print(f"Training Optimized PatchCore on: {train_dir}")
+        start_time = time.time()
         
         # Create dataset
         dataset = SimpleImageDataset(train_dir, transform=self.transform_train, 
                                    mask_method=self.mask_method, mask_params=self.mask_params)
-        dataloader = DataLoader(dataset, batch_size=8, shuffle=False, num_workers=4)
         
+        # Optimized dataloader settings
+        if self.device == 'cuda':
+            gpu_mem = torch.cuda.get_device_properties(0).total_memory
+            batch_size = 32 if gpu_mem > 10e9 else 16
+        else:
+            batch_size = 8
+        
+        num_workers = min(16, os.cpu_count() or 4)
+        
+        dataloader = DataLoader(
+            dataset, 
+            batch_size=batch_size, 
+            shuffle=False, 
+            num_workers=num_workers,
+            pin_memory=(self.device == 'cuda'),
+            persistent_workers=(num_workers > 0),
+            prefetch_factor=4 if num_workers > 0 else None
+        )
+        
+        # Extract sample to get dimensions
+        print("Determining feature dimensions...")
+        sample_batch = next(iter(dataloader))[0][:1].to(self.device)
+        sample_features = self.extract_features(sample_batch)
+        feature_dim = sample_features.shape[-1]
+        features_per_image = sample_features.shape[1]
+        
+        # Pre-allocate storage
+        total_images = len(dataset)
+        estimated_total_features = total_images * features_per_image
         all_features = []
         
         # Extract features
-        print(f"Extracting multi-layer features from {len(dataloader)} batches...")
+        print(f"Extracting features from {len(dataloader)} batches (batch_size={batch_size})...")
         for batch_idx, (images, _) in enumerate(tqdm(dataloader)):
             images = images.to(self.device)
             features = self.extract_features(images)
             all_features.append(features.cpu().numpy())
+            
+            # Clear cache periodically
+            if batch_idx % 10 == 0 and self.device == 'cuda':
+                torch.cuda.empty_cache()
         
         # Concatenate all features
         all_features = np.concatenate(all_features, axis=0)
@@ -247,72 +297,77 @@ class SimplePatchCore:
         
         print(f"Total features extracted: {all_features.shape}")
         
-        # Dimensionality reduction (optional but helps)
+        # Dimensionality reduction
         if all_features.shape[1] > 512:
             print("Applying dimensionality reduction...")
             self.projection = GaussianRandomProjection(n_components=512, random_state=42)
             all_features = self.projection.fit_transform(all_features)
         
-        # Smart sampling
-        print("Performing coreset sampling...")
-        if sample_ratio < 0.51:  # Only use smart sampling for small ratios
-            selected_indices = self.adaptive_sampling(all_features, sample_ratio)
+        # Smart sampling strategy
+        if sample_ratio >= 0.5:
+            print(f"High sample ratio ({sample_ratio}) - using simple sampling")
+            if sample_ratio >= 0.99:
+                selected_indices = np.arange(len(all_features))
+            else:
+                n_samples = int(len(all_features) * sample_ratio)
+                selected_indices = np.random.choice(len(all_features), n_samples, replace=False)
         else:
-            # Random sampling for larger ratios (faster)
-            #n_samples = int(len(all_features) * sample_ratio)
-            #selected_indices = np.random.choice(len(all_features), n_samples, replace=False)
-            #Just take all!
-            selected_indices = np.arange(len(all_features)) 
+            selected_indices = self.adaptive_sampling(all_features, sample_ratio)
         
         self.memory_bank = all_features[selected_indices]
         print(f"Memory bank size: {self.memory_bank.shape}")
         
-        # Setup FAISS index
-        print("Setting up FAISS index for fast search...")
-        self.faiss_index = self.setup_faiss_index(self.memory_bank)
+        # Create PyTorch tensor version for fast inference
+        self.memory_bank_torch = torch.from_numpy(self.memory_bank).float().to(self.device)
         
-        # Calculate threshold with validation split
-        # Use val_dir if provided, otherwise use train_dir
+        # Calculate threshold
         validation_dir = val_dir if val_dir is not None else train_dir
         if val_dir is not None:
             print(f"Using separate validation directory: {val_dir}")
         else:
-            print("Warning: Using training directory for validation (not recommended)")
+            print("Warning: Using training directory for validation")
             
         self.calculate_threshold_validation(validation_dir, percentile=threshold_percentile)
         
-        print("Training complete!")
+        total_time = time.time() - start_time
+        print(f"Training complete in {total_time:.2f} seconds!")
     
     def calculate_threshold_validation(self, val_dir, percentile=99):
-        """SECRET #7: Use validation split for threshold
-        
-        Args:
-            val_dir: Directory containing validation images
-            percentile: Percentile of scores to use as threshold
-        """
+        """Calculate threshold from validation set"""
         print(f"Calculating threshold from validation directory: {val_dir}")
         
         dataset = SimpleImageDataset(val_dir, transform=self.transform_test,
                                    mask_method=self.mask_method, mask_params=self.mask_params)
         
-        # Use all validation images
+        # Use batched processing for validation
+        batch_size = 16 if self.device == 'cuda' else 8
+        dataloader = DataLoader(
+            dataset, 
+            batch_size=batch_size, 
+            shuffle=False, 
+            num_workers=4,
+            pin_memory=(self.device == 'cuda')
+        )
+        
         all_scores = []
         
-        for idx in tqdm(range(len(dataset)), desc="Validation"):
-            img, _ = dataset[idx]
-            img_batch = img.unsqueeze(0).to(self.device)
+        for images, _ in tqdm(dataloader, desc="Validation"):
+            images = images.to(self.device)
             
             # Extract features
-            features = self.extract_features(img_batch)
-            features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
+            features = self.extract_features(images)
             
-            # Project if needed
-            if self.projection is not None:
-                features_np = self.projection.transform(features_np)
-            
-            # Calculate anomaly score
-            score = self.calculate_anomaly_score(features_np)
-            all_scores.append(score)
+            # Process each image in the batch
+            for i in range(features.shape[0]):
+                img_features = features[i].cpu().numpy()
+                
+                # Project if needed
+                if self.projection is not None:
+                    img_features = self.projection.transform(img_features)
+                
+                # Calculate anomaly score
+                score = self.calculate_anomaly_score(img_features)
+                all_scores.append(score)
         
         # Set threshold
         self.global_threshold = np.percentile(all_scores, percentile)
@@ -320,30 +375,36 @@ class SimplePatchCore:
         print(f"\nValidation threshold calculated:")
         print(f"  - Based on {len(all_scores)} validation images")
         print(f"  - {percentile}th percentile: {self.global_threshold:.4f}")
-        print(f"  - Score distribution: min={min(all_scores):.6f}, max={max(all_scores):.6f}, mean={np.mean(all_scores):.6f}")
+        print(f"  - Score distribution: min={min(all_scores):.6f}, "
+              f"max={max(all_scores):.6f}, mean={np.mean(all_scores):.6f}")
         
         return self.global_threshold
     
     def calculate_anomaly_score(self, features, return_patch_scores=False):
-        """Calculate anomaly score using FAISS or scipy
+        """PyTorch-based anomaly score calculation (replaces FAISS)"""
+        # Ensure features is 2D
+        if len(features.shape) == 1:
+            features = features.reshape(1, -1)
         
-        Args:
-            features: Feature array (n_patches, n_features)
-            return_patch_scores: If True, returns per-patch scores for heatmap
-        """
-        if self.faiss_index is not None and FAISS_AVAILABLE:
-            # Use FAISS for fast search
-            distances, _ = self.faiss_index.search(features.astype(np.float32), k=1)
-            #min_distances = distances.squeeze()
-            min_distances = np.sqrt(distances.squeeze())
-        else:
-            # Fallback to scipy
-            distances = cdist(features, self.memory_bank, metric='euclidean')
-            min_distances = np.min(distances, axis=1)
+        # Convert to PyTorch tensor
+        features_torch = torch.from_numpy(features).float().to(self.device)
         
-        # Ensure min_distances is always 1D
-        if len(min_distances.shape) == 0:
-            min_distances = np.array([min_distances])
+        # Use batched distance calculation
+        batch_size = 10000
+        min_distances = []
+        
+        for i in range(0, len(features_torch), batch_size):
+            batch = features_torch[i:i+batch_size]
+            
+            # Compute distances to memory bank
+            distances = torch.cdist(batch, self.memory_bank_torch)
+            
+            # Get minimum distance for each patch
+            batch_min_distances, _ = distances.min(dim=1)
+            min_distances.append(batch_min_distances)
+        
+        # Concatenate results
+        min_distances = torch.cat(min_distances).cpu().numpy()
         
         if return_patch_scores:
             return min_distances
@@ -354,168 +415,156 @@ class SimplePatchCore:
         return anomaly_score
     
     def generate_heatmap(self, image_path, alpha=0.5, colormap='jet', save_path=None):
-        """Fast heatmap - main fix: remove spatial features extraction"""
-        import time
+        """Fast heatmap generation"""
         start_time = time.perf_counter()
 
         original_image = Image.open(image_path).convert('RGB')
         original_np = np.array(original_image)
         original_height, original_width = original_np.shape[:2]
         
-        image_tensor = self.transform_test(original_image).unsqueeze(0).to(self.device)
+        # Apply masking if configured
+        masked_image = original_image
+        if self.masker and self.mask_method:
+            if self.mask_method == 'center_crop':
+                masked_image = self.masker.center_crop_percent(original_image, **self.mask_params)
+            elif self.mask_method == 'edge_crop':
+                masked_image = self.masker.edge_based_crop(original_image, **self.mask_params)
         
-        # FIX: Single feature extraction (not spatial)
-        features = self.extract_features(image_tensor)  # Remove return_spatial=True
+        image_tensor = self.transform_test(masked_image).unsqueeze(0).to(self.device)
+        
+        # Extract features
+        features = self.extract_features(image_tensor)
         features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
         
         if self.projection is not None:
             features_np = self.projection.transform(features_np)
         
-        # Use existing method - should be fast with FAISS-GPU
+        # Get patch scores
         patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
         
         h, w = self.feature_map_size
         score_map = patch_scores.reshape(h, w)
         
-        # Faster image processing
-        score_map_resized = cv2.resize(score_map.astype(np.float32), 
-                                       (original_width, original_height), 
-                                       interpolation=cv2.INTER_LINEAR)  # Faster than CUBIC
+        # Resize to original dimensions
+        score_map_resized = cv2.resize(
+            score_map.astype(np.float32), 
+            (original_width, original_height), 
+            interpolation=cv2.INTER_LINEAR
+        )
         
-        score_map_smooth = gaussian_filter(score_map_resized, sigma=2.0)  # Faster than 4.0
+        # Smooth the score map
+        score_map_smooth = gaussian_filter(score_map_resized, sigma=2.0)
         
-        # Normalize and colorize
+        # Normalize
         score_min, score_max = score_map_smooth.min(), score_map_smooth.max()
         if score_max > score_min:
             score_map_norm = (score_map_smooth - score_min) / (score_max - score_min)
         else:
             score_map_norm = np.zeros_like(score_map_smooth)
         
+        # Apply colormap
         cmap = cm.get_cmap(colormap)
         heatmap_colored = cmap(score_map_norm)[:, :, :3]
         heatmap_colored = (heatmap_colored * 255).astype(np.uint8)
         
-        # Simple overlay
-        original_float = original_np.astype(np.float32)
-        heatmap_float = heatmap_colored.astype(np.float32)
-        
-        overlay = (original_float * (1.0 - alpha) + heatmap_float * alpha)
+        # Create overlay
+        overlay = (original_np.astype(np.float32) * (1.0 - alpha) + 
+                  heatmap_colored.astype(np.float32) * alpha)
         overlay = np.clip(overlay, 0, 255).astype(np.uint8)
         
         if save_path:
             Image.fromarray(overlay).save(save_path)
 
-        end_time = time.perf_counter()
-        execution_time = end_time - start_time
-        print(f"Heatmap took {execution_time:.4f} seconds")    
+        execution_time = time.perf_counter() - start_time
+        print(f"Heatmap generation took {execution_time:.4f} seconds")
         
         return overlay
 
     def predict(self, image_path, return_heatmap=True, min_region_size=None):
-       """Predict with all optimizations + optional heatmap
-       
-       Args:
-           image_path: Path to input image
-           return_heatmap: If True, includes heatmap in return dict
-           min_region_size: If not None, filters out anomaly regions smaller than this size in IMAGE pixels
-                            (e.g., 25 for 25 pixels in image space, following FR PatchCore)
-                            224x224 -> 25px, 512x512 -> 131px
-       """
-       # Load and preprocess
-       image = Image.open(image_path).convert('RGB')
-       original_size = image.size  # (width, height)
-       
-       # Apply background masking if configured
-       if self.masker and self.mask_method:
-           if self.mask_method == 'center_crop':
-               image = self.masker.center_crop_percent(image, **self.mask_params)
-           elif self.mask_method == 'edge_crop':
-               image = self.masker.edge_based_crop(image, **self.mask_params)
-       
-       image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
-       
-       # Extract features
-       features = self.extract_features(image_tensor)
-       features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
-       
-       # Project if needed
-       if self.projection is not None:
-           features_np = self.projection.transform(features_np)
-       
-       # Calculate score
-       anomaly_score = self.calculate_anomaly_score(features_np)
-       is_anomaly = anomaly_score > self.global_threshold
-       
-       # Apply region-based filtering if requested
-       if min_region_size is not None and is_anomaly:
-           # Get patch-level scores
-           patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
-           
-           # Reshape to spatial dimensions
-           h, w = self.feature_map_size
-           score_map = patch_scores.reshape(h, w)
-           
-           # Upsample score map to image resolution
-           # Use the transformed image size (512x512 typically)
-           image_height, image_width = self.image_size, self.image_size 
-           score_map_image = cv2.resize(score_map.astype(np.float32), 
-                                       (image_width, image_height), 
-                                       interpolation=cv2.INTER_LINEAR)
-           
-           # Create binary mask at image resolution
-           binary_mask_image = (score_map_image > self.global_threshold).astype(np.uint8)
-           
-           # Find connected components at image resolution
-           num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask_image, connectivity=8)
-           
-           # Check if any region is larger than min_region_size (in image pixels)
-           large_regions_exist = False
-           for i in range(1, num_labels):  # Skip background (label 0)
-               area = stats[i, cv2.CC_STAT_AREA]
-               if area >= min_region_size:
-                   large_regions_exist = True
-                   x, y, w, h = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP], stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
-                   print(f"Region {i}: area={area} px, bbox=({x},{y},{w},{h})")
-                   #break #<- uncomment to stop after first large region and therefore speed up processing
-           
-           # Update anomaly decision based on region size
-           if not large_regions_exist:
-               is_anomaly = False
-       
-       result = {
-           'anomaly_score': float(anomaly_score),
-           'is_anomaly': bool(is_anomaly),
-           'threshold': float(self.global_threshold)
-       }
-       
-       # Add region filtering info if it was applied
-       if min_region_size is not None:
-           result['min_region_size'] = min_region_size
-           result['region_filtered'] = not is_anomaly and anomaly_score > self.global_threshold
-       
-       # Add heatmap if requested
-       if return_heatmap:
-           try:
-               heatmap = self.generate_heatmap(image_path)
-               result['heatmap'] = heatmap
-           except Exception as e:
-               print(f"Warning: Could not generate heatmap: {e}")
-               result['heatmap'] = None
-       
-       return result
+        """Predict with region filtering"""
+        # Load and preprocess
+        image = Image.open(image_path).convert('RGB')
+        original_size = image.size
+        
+        # Apply background masking if configured
+        if self.masker and self.mask_method:
+            if self.mask_method == 'center_crop':
+                image = self.masker.center_crop_percent(image, **self.mask_params)
+            elif self.mask_method == 'edge_crop':
+                image = self.masker.edge_based_crop(image, **self.mask_params)
+        
+        image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
+        
+        # Extract features
+        features = self.extract_features(image_tensor)
+        features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
+        
+        # Project if needed
+        if self.projection is not None:
+            features_np = self.projection.transform(features_np)
+        
+        # Calculate score
+        anomaly_score = self.calculate_anomaly_score(features_np)
+        is_anomaly = anomaly_score > self.global_threshold
+        
+        # Apply region-based filtering if requested
+        if min_region_size is not None and is_anomaly:
+            # Get patch-level scores
+            patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
+            
+            # Reshape to spatial dimensions
+            h, w = self.feature_map_size
+            score_map = patch_scores.reshape(h, w)
+            
+            # Upsample to image resolution
+            image_height, image_width = self.image_size, self.image_size 
+            score_map_image = cv2.resize(
+                score_map.astype(np.float32), 
+                (image_width, image_height), 
+                interpolation=cv2.INTER_LINEAR
+            )
+            
+            # Create binary mask
+            binary_mask_image = (score_map_image > self.global_threshold).astype(np.uint8)
+            
+            # Find connected components
+            num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask_image, connectivity=8)
+            
+            # Check for regions larger than threshold
+            large_regions_exist = False
+            for i in range(1, num_labels):
+                area = stats[i, cv2.CC_STAT_AREA]
+                if area >= min_region_size:
+                    large_regions_exist = True
+                    x, y, w, h = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP], \
+                                stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+                    print(f"Region {i}: area={area} px, bbox=({x},{y},{w},{h})")
+            
+            if not large_regions_exist:
+                is_anomaly = False
+        
+        result = {
+            'anomaly_score': float(anomaly_score),
+            'is_anomaly': bool(is_anomaly),
+            'threshold': float(self.global_threshold)
+        }
+        
+        if min_region_size is not None:
+            result['min_region_size'] = min_region_size
+            result['region_filtered'] = not is_anomaly and anomaly_score > self.global_threshold
+        
+        if return_heatmap:
+            try:
+                heatmap = self.generate_heatmap(image_path)
+                result['heatmap'] = heatmap
+            except Exception as e:
+                print(f"Warning: Could not generate heatmap: {e}")
+                result['heatmap'] = None
+        
+        return result
     
     def predict_with_min_patch(self, image_path, return_heatmap=True, min_region_size=None):
-        """Predict with all optimizations + optional heatmap
-        
-        Args:
-            image_path: Path to input image
-            return_heatmap: If True, includes heatmap in return dict
-            min_region_size: If not None, filters out anomaly regions smaller than this size (in "pixels" in feature space (patch))
-                             4 means that 4 patches must be connected to be considered an anomaly
-                             224x224: 4 works well, but might be too aggressive
-                             FR Patchcore uses 5x5 = 25px in image size for 224x224 images which is smaller than 1 patch!!!!
-                             If i upscale to 512x512, then min_region_size=2 or 3 would simulate FR Patchcore's behavior, but will it work??
-        """
+        """Predict with patch-based region filtering"""
         # Load and preprocess
         image = Image.open(image_path).convert('RGB')
         
@@ -538,36 +587,28 @@ class SimplePatchCore:
         
         # Calculate score
         anomaly_score = self.calculate_anomaly_score(features_np)
-        
         is_anomaly = anomaly_score > self.global_threshold
         
         # Apply region-based filtering if requested
         if min_region_size is not None and is_anomaly:
-            # Get patch-level scores
             patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
             
-            # Reshape to spatial dimensions
             h, w = self.feature_map_size
             score_map = patch_scores.reshape(h, w)
             
-            # Create binary mask using the same threshold
             binary_mask = (score_map > self.global_threshold).astype(np.uint8)
             
-            # Find connected components
             num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
             
-            # Check if any region is larger than min_region_size
             large_regions_exist = False
-            for i in range(1, num_labels):  # Skip background (label 0)
+            for i in range(1, num_labels):
                 area = stats[i, cv2.CC_STAT_AREA]
                 if area >= min_region_size:
                     large_regions_exist = True
                     break
             
-            # Update anomaly decision based on region size
             if not large_regions_exist:
                 is_anomaly = False
-                # Keep the original score but mark as normal due to small region size
         
         result = {
             'anomaly_score': float(anomaly_score),
@@ -575,12 +616,10 @@ class SimplePatchCore:
             'threshold': float(self.global_threshold)
         }
         
-        # Add region filtering info if it was applied
         if min_region_size is not None:
             result['min_region_size'] = min_region_size
             result['region_filtered'] = not is_anomaly and anomaly_score > self.global_threshold
         
-        # Add heatmap if requested
         if return_heatmap:
             try:
                 heatmap = self.generate_heatmap(image_path)
@@ -593,6 +632,10 @@ class SimplePatchCore:
     
     def save(self, path):
         """Save model with all components"""
+        # Clear PyTorch tensor before saving to reduce file size
+        memory_bank_torch_device = self.memory_bank_torch.device if self.memory_bank_torch is not None else None
+        self.memory_bank_torch = None
+        
         torch.save({
             'memory_bank': self.memory_bank,
             'model_state': self.model.state_dict(),
@@ -605,6 +648,11 @@ class SimplePatchCore:
             'mask_method': self.mask_method,
             'mask_params': self.mask_params
         }, path)
+        
+        # Recreate PyTorch tensor
+        if self.memory_bank is not None and memory_bank_torch_device is not None:
+            self.memory_bank_torch = torch.from_numpy(self.memory_bank).float().to(memory_bank_torch_device)
+        
         print(f"Model saved to: {path}")
     
     def load(self, path):
@@ -624,125 +672,215 @@ class SimplePatchCore:
         # Recreate masker if needed
         self.masker = BackgroundMasker() if self.mask_method else None
         
-        # Smart FAISS switching at load time
-        MIN_MEMORY_BANK_SIZE = 10000  #Only use FAISS for large data sets, else scipy is faster
-
+        # Create PyTorch tensor version for fast inference
         if self.memory_bank is not None:
-            if FAISS_AVAILABLE and len(self.memory_bank) >= MIN_MEMORY_BANK_SIZE:
-                print(f"Using FAISS (memory bank: {len(self.memory_bank)} patches)")
-                self.faiss_index = self.setup_faiss_index(self.memory_bank)
-            else:
-                print(f"Using scipy (memory bank: {len(self.memory_bank)} patches)")
-                self.faiss_index = None
+            self.memory_bank_torch = torch.from_numpy(self.memory_bank).float().to(self.device)
+            print(f"✓ Memory bank loaded: {self.memory_bank.shape}")
+            print(f"✓ Using PyTorch for inference (optimized for RTX 4060)")
         
         print(f"✓ Model loaded from: {path}")
 
     def debug_region_sizes(self, image_path):
-        """Debug function to understand the relationship between feature and image space"""
-    
+        """Debug function to understand region sizes"""
         # Load image
         image = Image.open(image_path).convert('RGB')
         image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
-    
+        
         # Extract features
         features = self.extract_features(image_tensor)
         features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
-    
+        
         # Get dimensions
         h, w = self.feature_map_size
-        image_size = self.image_size  # or whatever your transform uses
-    
+        image_size = self.image_size
+        
         print(f"Image size: {image_size}×{image_size}")
         print(f"Feature map size: {h}×{w}")
         print(f"Feature-to-image ratio: {image_size/h:.2f}×{image_size/w:.2f}")
         print(f"Each feature pixel represents: {(image_size/h)*(image_size/w):.1f} image pixels")
         print()
-    
+        
         # Project if needed
         if self.projection is not None:
             features_np = self.projection.transform(features_np)
-    
+        
         # Calculate patch scores
         patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
         score_map = patch_scores.reshape(h, w)
-    
+        
         # Create binary mask
         binary_mask = (score_map > self.global_threshold).astype(np.uint8)
-    
+        
         # Find connected components
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
-    
-        print(f"Number of anomaly regions found: {num_labels - 1}")  # -1 for background
-    
+        
+        print(f"Number of anomaly regions found: {num_labels - 1}")
+        
         # Analyze each region
         for i in range(1, num_labels):
             area_feature = stats[i, cv2.CC_STAT_AREA]
-            # Convert to approximate image pixels
             area_image = area_feature * (image_size/h) * (image_size/w)
-        
+            
             x, y, width, height = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP], \
                                   stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
-        
+            
             print(f"\nRegion {i}:")
             print(f"  Feature space: {area_feature} pixels ({width}×{height})")
             print(f"  Image space (approx): {area_image:.0f} pixels")
             print(f"  Equivalent square size: {np.sqrt(area_image):.1f}×{np.sqrt(area_image):.1f} pixels")
-        
+       
         # Test different min_region_size values
         print("\n" + "="*50)
         print("Testing different min_region_size values:")
         print("="*50)
-    
+       
         for min_size in [1, 2, 4, 8, 16, 25, 50]:
-            surviving_regions = 0
-            for i in range(1, num_labels):
-                if stats[i, cv2.CC_STAT_AREA] >= min_size:
-                    surviving_regions += 1
-        
-            equiv_image_pixels = min_size * (image_size/h) * (image_size/w)
-            print(f"min_region_size={min_size:3d} (feature space) ≈ {equiv_image_pixels:6.0f} image pixels "
-                  f"→ {surviving_regions} regions survive")
+           surviving_regions = 0
+           for i in range(1, num_labels):
+               if stats[i, cv2.CC_STAT_AREA] >= min_size:
+                   surviving_regions += 1
+           
+           equiv_image_pixels = min_size * (image_size/h) * (image_size/w)
+           print(f"min_region_size={min_size:3d} (feature space) ≈ {equiv_image_pixels:6.0f} image pixels "
+                 f"→ {surviving_regions} regions survive")
 
-    # Add this method to your SimplePatchCore class and call it like:
-    # model.debug_region_sizes("path/to/anomaly/image.jpg")
 
 class SimpleImageDataset(Dataset):
-    """Dataset for loading images"""
-    def __init__(self, root_dir, transform=None, mask_method=None, mask_params=None):
-        self.root_dir = Path(root_dir)
-        self.transform = transform
-        self.mask_method = mask_method
-        self.mask_params = mask_params or {}
-        self.masker = BackgroundMasker() if mask_method else None
-        
-        # Collect all image files
-        all_images = []
-        all_images.extend(self.root_dir.glob("*.jpg"))
-        all_images.extend(self.root_dir.glob("*.png"))
-        all_images.extend(self.root_dir.glob("*.jpeg"))
-        all_images.extend(self.root_dir.glob("*.JPEG"))
-        
-        # Remove duplicates (for case-insensitive filesystems)
-        # Convert to resolved paths and use a set to remove duplicates
-        unique_paths = list(set(img.resolve() for img in all_images))
-        self.images = sorted(unique_paths)  # Sort for consistent ordering
-        
-        print(f"Found {len(self.images)} unique images in {root_dir}")
-    
-    def __len__(self):
-        return len(self.images)
-    
-    def __getitem__(self, idx):
-        img_path = self.images[idx]
-        image = Image.open(img_path).convert('RGB')
-        
-        # Apply background masking if configured
-        if self.masker and self.mask_method:
-            if self.mask_method == 'center_crop':
-                image = self.masker.center_crop_percent(image, **self.mask_params)
-            elif self.mask_method == 'edge_crop':
-                image = self.masker.edge_based_crop(image, **self.mask_params)
-        
-        if self.transform:
-            image = self.transform(image)
-        return image, str(img_path)
+   """Optimized dataset for loading images"""
+   def __init__(self, root_dir, transform=None, mask_method=None, mask_params=None):
+       self.root_dir = Path(root_dir)
+       self.transform = transform
+       self.mask_method = mask_method
+       self.mask_params = mask_params or {}
+       self.masker = BackgroundMasker() if mask_method else None
+       
+       # Collect all image files
+       all_images = []
+       extensions = ['*.jpg', '*.png', '*.jpeg', '*.JPEG', '*.JPG', '*.PNG']
+       for ext in extensions:
+           all_images.extend(self.root_dir.glob(ext))
+       
+       # Remove duplicates
+       unique_paths = list(set(img.resolve() for img in all_images))
+       self.images = sorted(unique_paths)
+       
+       print(f"Found {len(self.images)} unique images in {root_dir}")
+       
+       # Pre-cache images if dataset is small (optional optimization)
+       self.cache_images = len(self.images) < 1000
+       self.image_cache = {}
+       
+       if self.cache_images:
+           print("Pre-caching images for faster training...")
+           from tqdm import tqdm
+           for img_path in tqdm(self.images):
+               try:
+                   image = Image.open(img_path).convert('RGB')
+                   self.image_cache[str(img_path)] = image
+               except Exception as e:
+                   print(f"Error loading {img_path}: {e}")
+   
+   def __len__(self):
+       return len(self.images)
+   
+   def __getitem__(self, idx):
+       img_path = self.images[idx]
+       
+       # Use cache if available
+       if self.cache_images and str(img_path) in self.image_cache:
+           image = self.image_cache[str(img_path)].copy()
+       else:
+           image = Image.open(img_path).convert('RGB')
+       
+       # Apply background masking if configured
+       if self.masker and self.mask_method:
+           if self.mask_method == 'center_crop':
+               image = self.masker.center_crop_percent(image, **self.mask_params)
+           elif self.mask_method == 'edge_crop':
+               image = self.masker.edge_based_crop(image, **self.mask_params)
+       
+       if self.transform:
+           image = self.transform(image)
+       
+       return image, str(img_path)
+
+
+# Utility functions for testing
+def benchmark_inference(model, test_images, num_runs=10):
+   """Benchmark inference speed"""
+   import time
+   
+   times = []
+   
+   for img_path in test_images[:num_runs]:
+       start = time.perf_counter()
+       result = model.predict(img_path, return_heatmap=False)
+       end = time.perf_counter()
+       times.append(end - start)
+   
+   avg_time = np.mean(times)
+   std_time = np.std(times)
+   
+   print(f"\nInference benchmark results:")
+   print(f"  Average time: {avg_time*1000:.2f} ms")
+   print(f"  Std deviation: {std_time*1000:.2f} ms")
+   print(f"  Min time: {min(times)*1000:.2f} ms")
+   print(f"  Max time: {max(times)*1000:.2f} ms")
+   
+   return times
+
+
+def profile_memory_usage(model):
+   """Profile GPU memory usage"""
+   if torch.cuda.is_available():
+       torch.cuda.empty_cache()
+       torch.cuda.synchronize()
+       
+       allocated = torch.cuda.memory_allocated() / 1024**2  # MB
+       reserved = torch.cuda.memory_reserved() / 1024**2    # MB
+       
+       print(f"\nGPU Memory usage:")
+       print(f"  Allocated: {allocated:.2f} MB")
+       print(f"  Reserved: {reserved:.2f} MB")
+       
+       if hasattr(model, 'memory_bank_torch') and model.memory_bank_torch is not None:
+           mb_size = model.memory_bank_torch.element_size() * model.memory_bank_torch.nelement() / 1024**2
+           print(f"  Memory bank size: {mb_size:.2f} MB")
+
+
+# Example usage
+if __name__ == "__main__":
+   # Initialize model
+   model = SimplePatchCore(backbone='wide_resnet50_2', device='cuda')
+   
+   # Train
+   model.fit(
+       train_dir="path/to/normal/images",
+       sample_ratio=0.1,  # 10% coreset
+       threshold_percentile=99,
+       val_dir="path/to/validation/images"  # Optional separate validation
+   )
+   
+   # Save model
+   model.save("optimized_patchcore_model.pth")
+   
+   # Load and test
+   model2 = SimplePatchCore(backbone='wide_resnet50_2', device='cuda')
+   model2.load("optimized_patchcore_model.pth")
+   
+   # Predict
+   result = model2.predict(
+       "path/to/test/image.jpg",
+       return_heatmap=True,
+       min_region_size=131  # For 512x512 images
+   )
+   
+   print(f"Anomaly score: {result['anomaly_score']:.4f}")
+   print(f"Is anomaly: {result['is_anomaly']}")
+   
+   # Profile performance
+   profile_memory_usage(model2)
+   
+   # Benchmark
+   test_images = ["image1.jpg", "image2.jpg", "image3.jpg"]
+   benchmark_inference(model2, test_images)
