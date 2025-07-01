@@ -36,5 +36,6 @@ faiss-cpu       # for fast nearest neighbor search (optional, but recommended)
 
 # ------------------------------
 
+pygame          # for sound playback
 #ultralytics            # YOLOv8 implementation
 #streamlit-image-coordinates
