@@ -29,3 +29,4 @@ checkpoints/
 models/
 
 .git-backup/
+config/config.json

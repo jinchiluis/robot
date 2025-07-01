@@ -84,9 +84,19 @@ class QTPatch_Inference_Controller(QMainWindow):
         self.calibration_data = calibration_data
         self.coordinate_transformer = CoordinateTransformer()
         
+        # Load camera index from config
+        config_path = Path("config/config.json")
+        camera_index = 0
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                camera_index = config.get("camera_index", 0)
+            except Exception as e:
+                print(f"Warning: Could not read camera_index from config: {e}")
         # Handle camera
         if camera is None:
-            self.camera = QTCamera(camera_index=0, area=(x, y, width, height))
+            self.camera = QTCamera(camera_index=camera_index, area=(x, y, width, height))
             self._owns_camera = True
             self.camera.set_fixed_display_size(600, 600)
             self.store_camera = self.camera
