@@ -1,0 +1,56 @@
+{
+  "calibration_points": [
+    {
+      "pixel_x": 65,
+      "pixel_y": 297,
+      "robot_x": 463,
+      "robot_y": -19
+    },
+    {
+      "pixel_x": 311,
+      "pixel_y": 319,
+      "robot_x": 369,
+      "robot_y": -17
+    },
+    {
+      "pixel_x": 558,
+      "pixel_y": 328,
+      "robot_x": 193,
+      "robot_y": -8
+    },
+    {
+      "pixel_x": 491,
+      "pixel_y": 532,
+      "robot_x": 247,
+      "robot_y": 80
+    }
+  ],
+  "is_calibrated": true,
+  "calibration_error": 0.0,
+  "transformation_matrix": [
+    [
+      -0.550609059032858,
+      0.024857781064983042,
+      504.98195606749925
+    ],
+    [
+      -0.005073093737186169,
+      0.4389526350043232,
+      -151.16623267272948
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "num_points": 4,
+  "name": "my_points.json",
+  "created": "2025-06-24T21:50:56.458001",
+  "camera_area": {
+    "x": 500,
+    "y": 0,
+    "width": 600,
+    "height": 600
+  }
+}

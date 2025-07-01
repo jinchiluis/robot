@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "categories": {
+    "bad": {
+      "objects": [
+        "jet",
+        "fhrhrffh",
+        "jet2",
+        "jet3"
+      ],
+      "robot_action": "process_red_plane",
+      "color_code": "#FF6B6B"
+    },
+    "good": {
+      "objects": [
+        "willi",
+        "bello",
+        "fsfssfsf",
+        "jingang",
+        "langlang"
+      ],
+      "robot_action": "process_blue_plane",
+      "color_code": "#4ECDC4"
+    }
+  }
+}

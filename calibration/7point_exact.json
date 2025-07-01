@@ -1,0 +1,74 @@
+{
+  "calibration_points": [
+    {
+      "pixel_x": 165,
+      "pixel_y": 533,
+      "robot_x": 440,
+      "robot_y": 120
+    },
+    {
+      "pixel_x": 158,
+      "pixel_y": 61,
+      "robot_x": 440,
+      "robot_y": -155
+    },
+    {
+      "pixel_x": 492,
+      "pixel_y": 533,
+      "robot_x": 250,
+      "robot_y": 120
+    },
+    {
+      "pixel_x": 497,
+      "pixel_y": 64,
+      "robot_x": 250,
+      "robot_y": -155
+    },
+    {
+      "pixel_x": 65,
+      "pixel_y": 297,
+      "robot_x": 510,
+      "robot_y": -20
+    },
+    {
+      "pixel_x": 310,
+      "pixel_y": 318,
+      "robot_x": 377,
+      "robot_y": -20
+    },
+    {
+      "pixel_x": 557,
+      "pixel_y": 330,
+      "robot_x": 230,
+      "robot_y": -10
+    }
+  ],
+  "is_calibrated": true,
+  "calibration_error": 0.0,
+  "transformation_matrix": [
+    [
+      -0.5721034831762235,
+      0.0037481576227580415,
+      538.9705930807479
+    ],
+    [
+      -0.00984176391852891,
+      0.5828310286806158,
+      -191.8345941469451
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "num_points": 7,
+  "name": "7point_exact.json",
+  "created": "2025-06-24T15:51:50.796405",
+  "camera_area": {
+    "x": 500,
+    "y": 0,
+    "width": 600,
+    "height": 600
+  }
+}

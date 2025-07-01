@@ -1,0 +1,74 @@
+{
+  "calibration_points": [
+    {
+      "pixel_x": 158,
+      "pixel_y": 63,
+      "robot_x": 440,
+      "robot_y": -150
+    },
+    {
+      "pixel_x": 165,
+      "pixel_y": 534,
+      "robot_x": 440,
+      "robot_y": 120
+    },
+    {
+      "pixel_x": 491,
+      "pixel_y": 533,
+      "robot_x": 250,
+      "robot_y": 120
+    },
+    {
+      "pixel_x": 499,
+      "pixel_y": 65,
+      "robot_x": 250,
+      "robot_y": -100
+    },
+    {
+      "pixel_x": 65,
+      "pixel_y": 296,
+      "robot_x": 510,
+      "robot_y": 10
+    },
+    {
+      "pixel_x": 311,
+      "pixel_y": 320,
+      "robot_x": 377,
+      "robot_y": 19
+    },
+    {
+      "pixel_x": 577,
+      "pixel_y": 309,
+      "robot_x": 230,
+      "robot_y": 19
+    }
+  ],
+  "is_calibrated": true,
+  "calibration_error": 0.0,
+  "transformation_matrix": [
+    [
+      -0.5588874774398954,
+      0.0012748987271520296,
+      537.2480340824633
+    ],
+    [
+      0.036205382438012246,
+      0.5223882093710263,
+      -164.5006286387302
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "num_points": 7,
+  "name": "7point_with_hand.json",
+  "created": "2025-06-23T23:42:49.769274",
+  "camera_area": {
+    "x": 500,
+    "y": 0,
+    "width": 600,
+    "height": 600
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "calibration_points": [
+    {
+      "pixel_x": 560,
+      "pixel_y": 437,
+      "robot_x": 122,
+      "robot_y": 1222
+    },
+    {
+      "pixel_x": 499,
+      "pixel_y": 168,
+      "robot_x": 233,
+      "robot_y": 333
+    },
+    {
+      "pixel_x": 495,
+      "pixel_y": 634,
+      "robot_x": 333,
+      "robot_y": 333
+    },
+    {
+      "pixel_x": 318,
+      "pixel_y": 427,
+      "robot_x": 423,
+      "robot_y": 21
+    }
+  ],
+  "is_calibrated": true,
+  "calibration_error": 0.0,
+  "transformation_matrix": [
+    [
+      -1.0944230721157315,
+      0.18072960726028287,
+      714.6661163263178
+    ],
+    [
+      3.9467919290111544,
+      0.19114713824179796,
+      -1449.461405855058
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "num_points": 4,
+  "name": "test_062202.json",
+  "created": "2025-06-22T15:59:32.941666"
+}

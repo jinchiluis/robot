@@ -1,0 +1,71 @@
+{
+  "calibration_points": [
+    {
+      "pixel_x": 64,
+      "pixel_y": 298,
+      "robot_x": 510.0,
+      "robot_y": 10.0
+    },
+    {
+      "pixel_x": 313,
+      "pixel_y": 322,
+      "robot_x": 377.0,
+      "robot_y": 19.0
+    },
+    {
+      "pixel_x": 555,
+      "pixel_y": 336,
+      "robot_x": 230.0,
+      "robot_y": 19.0
+    },
+    {
+      "pixel_x": 164,
+      "pixel_y": 533,
+      "robot_x": 440.0,
+      "robot_y": 150.0
+    },
+    {
+      "pixel_x": 164,
+      "pixel_y": 63,
+      "robot_x": 440.0,
+      "robot_y": -120.0
+    },
+    {
+      "pixel_x": 490,
+      "pixel_y": 532,
+      "robot_x": 250.0,
+      "robot_y": 120.0
+    },
+    {
+      "pixel_x": 499,
+      "pixel_y": 68,
+      "robot_x": 250.0,
+      "robot_y": -100.0
+    }
+  ],
+  "is_calibrated": true,
+  "calibration_error": 0.0,
+  "transformation_matrix": [
+    [
+      -0.5744964534421604,
+      -0.002590867912365624,
+      542.0882959341185
+    ],
+    [
+      -0.018875783704147865,
+      0.5235517353606437,
+      -140.89024242078247
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "num_points": 7,
+  "image_info": {
+    "width": 600,
+    "height": 600,
+    "filename": "b6.png"
+  }
+}

@@ -1,0 +1,35 @@
+# ------------------------------
+
+# Conda section
+
+# Install these first with:
+
+# conda install -c conda-forge -c pytorch --file requirements.txt
+
+# ------------------------------
+
+python>=3.10
+numpy
+opencv          # provides cv2
+pandas
+pillow          # provides PIL
+requests
+tqdm
+streamlit
+pytorch         # from the pytorch channel (CUDA/CPU build as needed)
+torchvision     # match the PyTorch version
+
+# ------------------------------
+
+# Pip section
+
+# After activating the conda environment, run:
+
+# pip install -r requirements.txt --extra-index-url [https://pypi.org/simple](https://pypi.org/simple)
+
+# to install anything not (reliably) available via conda.
+
+# ------------------------------
+
+ultralytics            # YOLOv8 implementation
+streamlit-image-coordinates

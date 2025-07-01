@@ -1,0 +1,8 @@
+{
+            "name": "test1",
+            "created": "2024-12-19T10:30:00",
+            "calibration": "calibration/500_0_1200_600.json",
+            "model": "model/oneshot_model.pkl",
+            "robot_type": "Robot1",
+            "version": "1.0"
+}

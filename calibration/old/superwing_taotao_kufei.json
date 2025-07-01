@@ -1,0 +1,68 @@
+{
+  "calibration_points": [
+    {
+      "pixel_x": 66,
+      "pixel_y": 342,
+      "robot_x": 474,
+      "robot_y": -32
+    },
+    {
+      "pixel_x": 311,
+      "pixel_y": 370,
+      "robot_x": 360,
+      "robot_y": -27
+    },
+    {
+      "pixel_x": 560,
+      "pixel_y": 381,
+      "robot_x": 220,
+      "robot_y": -16
+    },
+    {
+      "pixel_x": 163,
+      "pixel_y": 109,
+      "robot_x": 373,
+      "robot_y": -164
+    },
+    {
+      "pixel_x": 166,
+      "pixel_y": 583,
+      "robot_x": 391,
+      "robot_y": 96
+    },
+    {
+      "pixel_x": 494,
+      "pixel_y": 583,
+      "robot_x": 260,
+      "robot_y": 112
+    },
+    {
+      "pixel_x": 502,
+      "pixel_y": 111,
+      "robot_x": 214,
+      "robot_y": -156
+    }
+  ],
+  "is_calibrated": true,
+  "calibration_error": 0.0,
+  "transformation_matrix": [
+    [
+      -0.4839200157726404,
+      0.06817271770858135,
+      459.66098692544847
+    ],
+    [
+      0.01119565388080443,
+      0.556123202210021,
+      -227.27914105100305
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "num_points": 7,
+  "name": "superwing_taotao_kufei.json",
+  "created": "2025-06-22T19:37:18.355796"
+}

@@ -1,0 +1,56 @@
+{
+  "calibration_points": [
+    {
+      "pixel_x": 164,
+      "pixel_y": 536,
+      "robot_x": 391,
+      "robot_y": 90
+    },
+    {
+      "pixel_x": 159,
+      "pixel_y": 64,
+      "robot_x": 378,
+      "robot_y": -169
+    },
+    {
+      "pixel_x": 490,
+      "pixel_y": 534,
+      "robot_x": 232,
+      "robot_y": -170
+    },
+    {
+      "pixel_x": 499,
+      "pixel_y": 64,
+      "robot_x": 263,
+      "robot_y": 112
+    }
+  ],
+  "is_calibrated": true,
+  "calibration_error": 0.0,
+  "transformation_matrix": [
+    [
+      -0.40990148968150397,
+      -0.02073428095056462,
+      456.65760576022745
+    ],
+    [
+      0.048528766659721785,
+      -0.02296653725326231,
+      -43.28895755703669
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "num_points": 4,
+  "name": "4point600_600.json",
+  "created": "2025-06-23T21:32:27.807843",
+  "camera_area": {
+    "x": 500,
+    "y": 0,
+    "width": 600,
+    "height": 600
+  }
+}
