@@ -158,9 +158,10 @@ class QTPatch_Inference_Controller(QMainWindow):
                         if 'camera_area' in self.calibration_data:
                             area = self.calibration_data['camera_area']
                             camera_area = (area['x'], area['y'], area['width'], area['height'])
-                            self.camera.set_area(camera_area)
-                            self.log(f"Camera area set to: {camera_area}")
-                            self.camera_area_changed.emit(area['x'], area['y'], area['width'], area['height'])
+                            if self.camera is not None:
+                                self.camera.set_area(camera_area)
+                                self.log(f"Camera area set to: {camera_area}")
+                                self.camera_area_changed.emit(area['x'], area['y'], area['width'], area['height'])
 
                     except Exception as e:
                         self.log(f"Failed to auto-load calibration: {str(e)}")
@@ -297,14 +298,16 @@ class QTPatch_Inference_Controller(QMainWindow):
         """Start or stop motion detection."""
         if self.start_stop_btn.text() == "Start Detection":
             # Get the current center of detected motion to store
-            camera_area = self.camera.get_area()
-            center_x = camera_area[0] + camera_area[2] // 2
-            center_y = camera_area[1] + camera_area[3] // 2
-            self.last_detection_location = (center_x, center_y)
-            
-            self.camera.set_object_detection_enabled(True)
-            self.start_stop_btn.setText("Stop Detection")
-            self.log("Motion detection started")
+            if self.camera is not None:
+                camera_area = self.camera.get_area()
+                center_x = camera_area[0] + camera_area[2] // 2
+                center_y = camera_area[1] + camera_area[3] // 2
+                self.last_detection_location = (center_x, center_y)
+                self.camera.set_object_detection_enabled(True)
+                self.start_stop_btn.setText("Stop Detection")
+                self.log("Motion detection started")
+            else:
+                self.log("Camera is not available. Cannot start detection.")
         else:
             self.camera.set_object_detection_enabled(False)
             self.update_state(State.IDLE)
