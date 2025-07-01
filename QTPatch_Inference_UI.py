@@ -17,7 +17,7 @@ def setup_ui(controller):
     
     # Camera title
     camera_title = QLabel("PatchCore Anomaly Detection")
-    camera_title.setAlignment(Qt.AlignCenter)
+    camera_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
     camera_title.setStyleSheet("font-size: 16px; font-weight: bold; padding: 5px;")
     camera_section_layout.addWidget(camera_title)
     
