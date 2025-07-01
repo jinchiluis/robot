@@ -22,19 +22,22 @@ class FeatureExtractorHelper:
     def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu'):
         self.device = device
         
-        # Load DINOv2 model - check for local cache first
-        model_cache_path = Path('./model_cache/dinov2_vits14.pth')
+
+        # Load DINOv2 model - check for local cache first (using state_dict for safety)
+        model_cache_path = Path('./model_cache/dinov2_vits14_state_dict.pth')
         model_cache_path.parent.mkdir(exist_ok=True)
-        
+
         if model_cache_path.exists():
-            print("Loading DINOv2 model from local cache...")
-            self.dino_model = torch.load(model_cache_path, map_location=self.device)
+            print("Loading DINOv2 model weights from local cache...")
+            self.dino_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14').to(self.device)
+            state_dict = torch.load(model_cache_path, map_location=self.device)
+            self.dino_model.load_state_dict(state_dict)
         else:
             print("Downloading DINOv2 model (first time only)...")
             self.dino_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14').to(self.device)
-            print("Saving model to local cache...")
-            torch.save(self.dino_model, model_cache_path)
-        
+            print("Saving model weights to local cache...")
+            torch.save(self.dino_model.state_dict(), model_cache_path)
+
         self.dino_model.eval()
         
         self.transform = transforms.Compose([
