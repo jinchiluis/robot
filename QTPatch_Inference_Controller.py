@@ -4,10 +4,11 @@ import cv2
 import numpy as np
 from pathlib import Path
 from enum import Enum
-from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFileDialog,
                                QPushButton, QLabel, QTextEdit, QStatusBar)
+from PySide6.QtMultimedia import QSoundEffect
 
 from QTCamera import QTCamera
 from patchcore_exth import SimplePatchCore
@@ -110,6 +111,11 @@ class QTPatch_Inference_Controller(QMainWindow):
         # Auto-load model and calibration if available
         QTimer.singleShot(0, self.auto_load_files)
        
+        # Initialize sound
+        self.beep_sound = QSoundEffect()
+        self.beep_sound.setSource(QUrl.fromLocalFile("beep.mp3"))
+        self.beep_sound.setVolume(0.5)  # Adjust as needed
+        
     def auto_load_files(self):
         """Automatically load model and calibration files from default folders."""
         # Check for PatchCore model file in "patchcore_models" folder
@@ -405,6 +411,8 @@ class QTPatch_Inference_Controller(QMainWindow):
                 # Color code the status
                 if is_anomaly:
                     self.anomaly_status_label.setStyleSheet("color: red; font-weight: bold;")
+                    # Play beep sound on anomaly
+                    self.beep_sound.play()
                 else:
                     self.anomaly_status_label.setStyleSheet("color: green; font-weight: bold;")
         
