@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                               QLabel, QTextEdit, QGroupBox, QStatusBar,
+                               QLabel, QTextEdit, QGroupBox, QStatusBar, QFrame,
                                QSlider, QDoubleSpinBox)
 
 
@@ -68,8 +68,8 @@ def setup_ui(controller):
     status_layout.addWidget(controller.calibration_status_label)
     
     # Separator line
-    separator = QLabel()
-    separator.setFrameStyle(QLabel.HLine | QLabel.Sunken)
+    separator = QFrame()
+    separator.setFrameStyle(QFrame.Shape.HLine | QFrame.Shadow.Sunken)
     status_layout.addWidget(separator)
     
     # Anomaly detection results
