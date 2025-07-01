@@ -172,10 +172,21 @@ class QTPatch_Training_Controller(QMainWindow):
         # Calibration
         self.calibration_data = calibration_data
         self.calibration_loaded = False
-        
+
         # Handle camera
         if camera is None:
-            self.camera = QTCamera(camera_index=0)
+            # Read camera index from config/config.json
+            camera_index = 0
+            try:
+                import json
+                config_path = Path("config/config.json")
+                if config_path.exists():
+                    with open(config_path, "r") as f:
+                        config = json.load(f)
+                        camera_index = int(config.get("camera_index", 0))
+            except Exception as e:
+                print(f"Warning: Could not read camera_index from config: {e}")
+            self.camera = QTCamera(camera_index=camera_index)
             self._owns_camera = True
             self.camera.set_fixed_display_size(600, 600)
         else:
