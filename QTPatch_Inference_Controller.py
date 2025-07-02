@@ -121,8 +121,12 @@ class QTPatch_Inference_Controller(QMainWindow):
         QTimer.singleShot(0, self.auto_load_files)
        
         # Initialize sound using pygame
-        pygame.mixer.init()
-        self.sound = pygame.mixer.Sound("beep.mp3")
+        try:
+            pygame.mixer.init()
+            self.sound = pygame.mixer.Sound("beep.mp3")
+        except pygame.error:
+            self.sound = None
+            print("No Sound Device available - Sound disabled")
             
     def auto_load_files(self):
         """Automatically load model and calibration files from default folders."""

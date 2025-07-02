@@ -24,12 +24,7 @@ from pathlib import Path
 from tqdm import tqdm
 import os
 import time
-
-try:
-    import faiss
-    FAISS_AVAILABLE = True
-except ImportError:
-    FAISS_AVAILABLE = False
+import faiss
 
 # Import BackgroundMasker
 from bgmasker import BackgroundMasker
@@ -38,20 +33,13 @@ from bgmasker import BackgroundMasker
 class SimplePatchCore:
     """Optimized PatchCore with PyTorch-based inference"""
     
-    def __init__(self, backbone='wide_resnet50_2', device='cuda', mask_method=None, mask_params=None):
-        
-        self.device = device
-        if torch.cuda.is_available():
-            self.device = 'cuda'
-        else:
-            self.device = 'cpu'
+    def __init__(self, backbone='wide_resnet50_2', device='cuda' if torch.cuda.is_available() else 'cpu', mask_method=None, mask_params=None):
 
-        print(f"self.device: {self.device} ")
+        self.device = device
         print(f"PyTorch version: {torch.__version__}")
         print(f"CUDA available: {torch.cuda.is_available()}")
         print(f"CUDA version: {torch.version.cuda}")
         print(torch.cuda.get_device_name(0))  # Should show RTX 3060
-        print(f"FAISS available: {FAISS_AVAILABLE}  ")
         if backbone == 'wide_resnet50_2':
             self.model = models.wide_resnet50_2(weights=models.Wide_ResNet50_2_Weights.IMAGENET1K_V1)
             self.feature_layers = ['layer2', 'layer3']
@@ -64,7 +52,7 @@ class SimplePatchCore:
         
         # Setup feature extractor
         self.feature_extractor = self._setup_feature_extractor()
-        self.model.to(self.device)
+        self.model.to(device)
         self.model.eval()
         
         # Compile model for faster inference (PyTorch 2.0+)
@@ -93,7 +81,7 @@ class SimplePatchCore:
         
         # Determine inference method based on GPU
         self.use_faiss_inference = False
-        if self.device == 'cuda':
+        if device == 'cuda':
             gpu_name = torch.cuda.get_device_properties(0).name
             if "3060" in gpu_name and FAISS_AVAILABLE:
                 self.use_faiss_inference = True
@@ -158,36 +146,36 @@ class SimplePatchCore:
         spatial_features = []
         
         # Use automatic mixed precision for faster computation
-        #with torch.amp.autocast(device_type='cuda', enabled=(self.device == 'cuda')): <- makes it 0.1 seconds slower
-        with torch.no_grad():
-            _ = self.model(images)
+        with torch.amp.autocast(device_type='cuda', enabled=(self.device == 'cuda')):
+            with torch.no_grad():
+                _ = self.model(images)
                 
-            reference_size = None
+                reference_size = None
                 
-            for i, layer_name in enumerate(self.feature_layers):
-                layer_features = self.feature_extractor[layer_name]
-                b, c, h, w = layer_features.shape
-                
-                if reference_size is None:
-                    reference_size = (h, w)
-                    self.feature_map_size = reference_size
+                for i, layer_name in enumerate(self.feature_layers):
+                    layer_features = self.feature_extractor[layer_name]
+                    b, c, h, w = layer_features.shape
                     
-                if (h, w) != reference_size:
-                    layer_features = torch.nn.functional.interpolate(
-                        layer_features, 
-                        size=reference_size, 
-                        mode='bilinear', 
-                        align_corners=False
-                    )
+                    if reference_size is None:
+                        reference_size = (h, w)
+                        self.feature_map_size = reference_size
                     
-                if return_spatial:
-                    spatial_features.append(layer_features)
+                    if (h, w) != reference_size:
+                        layer_features = torch.nn.functional.interpolate(
+                            layer_features, 
+                            size=reference_size, 
+                            mode='bilinear', 
+                            align_corners=False
+                        )
                     
-                # More efficient reshape
-                layer_features = layer_features.permute(0, 2, 3, 1).contiguous()
-                layer_features = layer_features.view(b, -1, c)
-                features.append(layer_features)
-
+                    if return_spatial:
+                        spatial_features.append(layer_features)
+                    
+                    # More efficient reshape
+                    layer_features = layer_features.permute(0, 2, 3, 1).contiguous()
+                    layer_features = layer_features.view(b, -1, c)
+                    features.append(layer_features)
+        
         features = torch.cat(features, dim=-1)
         
         if return_spatial:
@@ -423,8 +411,6 @@ class SimplePatchCore:
             features = features.reshape(1, -1)
     
         # Choose inference method based on GPU
-        print(f"use_faiss_inference: {self.use_faiss_inference} ")
-        print(f"self.faiss_index: {self.faiss_index}  ")
         if self.use_faiss_inference and self.faiss_index is not None:
             # FAISS path for 3060
             start_time = time.perf_counter()
