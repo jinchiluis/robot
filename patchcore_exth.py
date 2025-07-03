@@ -297,8 +297,13 @@ class SimplePatchCore:
        #     prefetch_factor=4 if num_workers > 0 else None
        # )
         
-        dataloader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=4)
-        
+        print(f"Total images: {len(dataset)}")
+        if len(dataset) < 100:
+            num_workers = 0  # Disable workers for small datasets
+        else: 
+            num_workers = 2
+        dataloader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=num_workers)
+
         all_features = []
         
         # Extract features
