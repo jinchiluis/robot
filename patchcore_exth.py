@@ -31,15 +31,11 @@ try:
 except ImportError:
     FAISS_AVAILABLE = False
 
-# Import BackgroundMasker
-from bgmasker import BackgroundMasker
-
 
 class SimplePatchCore:
     """Optimized PatchCore with PyTorch-based inference"""
     
-    def __init__(self, backbone='wide_resnet50_2', device='cuda', mask_method=None, mask_params=None):
-        
+    def __init__(self, backbone='wide_resnet50_2', device='cuda'):
         self.device = device
         if torch.cuda.is_available():
             self.device = 'cuda'
@@ -66,19 +62,6 @@ class SimplePatchCore:
         self.feature_extractor = self._setup_feature_extractor()
         self.model.to(self.device)
         self.model.eval()
-        
-        # Compile model for faster inference (PyTorch 2.0+)
-        #if hasattr(torch, 'compile') and device == 'cuda':
-        #    try:
-        #        self.model = torch.compile(self.model, mode='reduce-overhead')
-        #        print("✓ Model compiled with torch.compile")
-        #    except:
-        #        print("⚠️ torch.compile not available or failed")
-
-        # Masker
-        self.mask_method = mask_method
-        self.mask_params = mask_params
-        self.masker = BackgroundMasker() if mask_method else None
         
         # Disable gradient computation
         for param in self.model.parameters():
@@ -275,27 +258,7 @@ class SimplePatchCore:
         start_time = time.time()
         
         # Create dataset
-        dataset = SimpleImageDataset(train_dir, transform=self.transform_train, 
-                                   mask_method=self.mask_method, mask_params=self.mask_params)
-        
-        # Optimized dataloader settings
-        #if self.device == 'cuda':
-        #    gpu_mem = torch.cuda.get_device_properties(0).total_memory
-        #    batch_size = 32 if gpu_mem > 10e9 else 16
-        #else:
-        #    batch_size = 8
-        
-        #num_workers = min(16, os.cpu_count() or 4)
-        
-       # dataloader = DataLoader(
-       #     dataset,
-       #     batch_size=batch_size,
-       #     shuffle=False,
-       #     num_workers=num_workers,
-       #     pin_memory=(self.device == 'cuda'),
-       #     persistent_workers=(num_workers > 0),
-       #     prefetch_factor=4 if num_workers > 0 else None
-       # )
+        dataset = SimpleImageDataset(train_dir, transform=self.transform_train)
         
         print(f"Total images: {len(dataset)}")
         if len(dataset) < 100:
@@ -365,8 +328,7 @@ class SimplePatchCore:
         """Calculate threshold from validation set"""
         print(f"Calculating threshold from validation directory: {val_dir}")
         
-        dataset = SimpleImageDataset(val_dir, transform=self.transform_test,
-                                   mask_method=self.mask_method, mask_params=self.mask_params)
+        dataset = SimpleImageDataset(val_dir, transform=self.transform_test)
         
         # Use all validation images
         all_scores = []
@@ -453,19 +415,11 @@ class SimplePatchCore:
         """Fast heatmap generation"""
         start_time = time.perf_counter()
 
-        original_image = Image.open(image_path).convert('RGB')
-        original_np = np.array(original_image)
-        original_height, original_width = original_np.shape[:2]
+        image = Image.open(image_path).convert('RGB')
+        image_np = np.array(image)
+        image_height, image_width = image_np.shape[:2]
         
-        # Apply masking if configured
-        masked_image = original_image
-        if self.masker and self.mask_method:
-            if self.mask_method == 'center_crop':
-                masked_image = self.masker.center_crop_percent(original_image, **self.mask_params)
-            elif self.mask_method == 'edge_crop':
-                masked_image = self.masker.edge_based_crop(original_image, **self.mask_params)
-        
-        image_tensor = self.transform_test(masked_image).unsqueeze(0).to(self.device)
+        image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
         
         # Extract features
         features = self.extract_features(image_tensor)
@@ -483,7 +437,7 @@ class SimplePatchCore:
         # Resize to original dimensions
         score_map_resized = cv2.resize(
             score_map.astype(np.float32), 
-            (original_width, original_height), 
+            (image_width, image_height), 
             interpolation=cv2.INTER_LINEAR
         )
         
@@ -503,7 +457,7 @@ class SimplePatchCore:
         heatmap_colored = (heatmap_colored * 255).astype(np.uint8)
         
         # Create overlay
-        overlay = (original_np.astype(np.float32) * (1.0 - alpha) + 
+        overlay = (image_np.astype(np.float32) * (1.0 - alpha) + 
                   heatmap_colored.astype(np.float32) * alpha)
         overlay = np.clip(overlay, 0, 255).astype(np.uint8)
         
@@ -520,13 +474,6 @@ class SimplePatchCore:
         # Load and preprocess
         image = Image.open(image_path).convert('RGB')
         original_size = image.size
-        
-        # Apply background masking if configured
-        if self.masker and self.mask_method:
-            if self.mask_method == 'center_crop':
-                image = self.masker.center_crop_percent(image, **self.mask_params)
-            elif self.mask_method == 'edge_crop':
-                image = self.masker.edge_based_crop(image, **self.mask_params)
         
         image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
         
@@ -603,13 +550,6 @@ class SimplePatchCore:
         # Load and preprocess
         image = Image.open(image_path).convert('RGB')
         
-        # Apply background masking if configured
-        if self.masker and self.mask_method:
-            if self.mask_method == 'center_crop':
-                image = self.masker.center_crop_percent(image, **self.mask_params)
-            elif self.mask_method == 'edge_crop':
-                image = self.masker.edge_based_crop(image, **self.mask_params)
-        
         image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
         
         # Extract features
@@ -679,9 +619,7 @@ class SimplePatchCore:
             'feature_layers': self.feature_layers,
             'feature_map_size': self.feature_map_size,
             'feature_mean': self.feature_mean,
-            'feature_std': self.feature_std,
-            'mask_method': self.mask_method,
-            'mask_params': self.mask_params
+            'feature_std': self.feature_std
         }, path)
         
         # Recreate PyTorch tensor
@@ -701,11 +639,6 @@ class SimplePatchCore:
         self.feature_map_size = checkpoint.get('feature_map_size', None)
         self.feature_mean = checkpoint.get('feature_mean', None)
         self.feature_std = checkpoint.get('feature_std', None)
-        self.mask_method = checkpoint.get('mask_method', None)
-        self.mask_params = checkpoint.get('mask_params', {})
-        
-        # Recreate masker if needed
-        self.masker = BackgroundMasker() if self.mask_method else None
         
         # Create PyTorch tensor version for fast inference
         if self.memory_bank is not None:
@@ -714,7 +647,6 @@ class SimplePatchCore:
         
             # Determine inference method based on GPU (same logic as __init__)
             if self.device == 'cuda':
-
                 gpu_name = torch.cuda.get_device_properties(0).name
                 if "060" in gpu_name and FAISS_AVAILABLE:
                     # Setup FAISS for 3060
@@ -801,12 +733,9 @@ class SimplePatchCore:
 
 class SimpleImageDataset(Dataset):
    """Optimized dataset for loading images"""
-   def __init__(self, root_dir, transform=None, mask_method=None, mask_params=None):
+   def __init__(self, root_dir, transform=None):
        self.root_dir = Path(root_dir)
        self.transform = transform
-       self.mask_method = mask_method
-       self.mask_params = mask_params or {}
-       self.masker = BackgroundMasker() if mask_method else None
        
        # Collect all image files
        all_images = []
@@ -827,13 +756,6 @@ class SimpleImageDataset(Dataset):
        img_path = self.images[idx]
        
        image = Image.open(img_path).convert('RGB')
-       
-       # Apply background masking if configured
-       if self.masker and self.mask_method:
-           if self.mask_method == 'center_crop':
-               image = self.masker.center_crop_percent(image, **self.mask_params)
-           elif self.mask_method == 'edge_crop':
-               image = self.masker.edge_based_crop(image, **self.mask_params)
        
        if self.transform:
            image = self.transform(image)
