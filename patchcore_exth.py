@@ -301,28 +301,19 @@ class SimplePatchCore:
             prefetch_factor=4 if num_workers > 0 else None
         )
         
-        # Extract sample to get dimensions
-        print("Determining feature dimensions...")
-        sample_batch = next(iter(dataloader))[0][:1].to(self.device)
-        sample_features = self.extract_features(sample_batch)
-        feature_dim = sample_features.shape[-1]
-        features_per_image = sample_features.shape[1]
+        # Create dataset
+        dataset = SimpleImageDataset(train_dir, transform=self.transform_train, 
+                                   mask_method=self.mask_method, mask_params=self.mask_params)
+        dataloader = DataLoader(dataset, batch_size=8, shuffle=False, num_workers=4)
         
-        # Pre-allocate storage
-        total_images = len(dataset)
-        estimated_total_features = total_images * features_per_image
         all_features = []
         
         # Extract features
-        print(f"Extracting features from {len(dataloader)} batches (batch_size={batch_size})...")
+        print(f"Extracting multi-layer features from {len(dataloader)} batches...")
         for batch_idx, (images, _) in enumerate(tqdm(dataloader)):
             images = images.to(self.device)
             features = self.extract_features(images)
             all_features.append(features.cpu().numpy())
-            
-            # Clear cache periodically
-            if batch_idx % 10 == 0 and self.device == 'cuda':
-                torch.cuda.empty_cache()
         
         # Concatenate all features
         all_features = np.concatenate(all_features, axis=0)
