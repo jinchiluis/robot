@@ -291,30 +291,30 @@ class SimplePatchCore:
         
         num_workers = min(16, os.cpu_count() or 4)
         
-        dataloader = DataLoader(
-            dataset, 
-            batch_size=batch_size, 
-            shuffle=False, 
-            num_workers=num_workers,
-            pin_memory=(self.device == 'cuda'),
-            persistent_workers=(num_workers > 0),
-            prefetch_factor=4 if num_workers > 0 else None
-        )
+       # dataloader = DataLoader(
+       ##     dataset, 
+       #     batch_size=batch_size, 
+        #    shuffle=False, 
+       #     num_workers=num_workers,
+       #     pin_memory=(self.device == 'cuda'),
+       #     persistent_workers=(num_workers > 0),
+        #    prefetch_factor=4 if num_workers > 0 else None
+        #)
         
-        # Create dataset
-        dataset = SimpleImageDataset(train_dir, transform=self.transform_train, 
-                                   mask_method=self.mask_method, mask_params=self.mask_params)
         dataloader = DataLoader(dataset, batch_size=8, shuffle=False, num_workers=4)
         
         all_features = []
         
         # Extract features
+        start_time2 = time.time()
         print(f"Extracting multi-layer features from {len(dataloader)} batches...")
         for batch_idx, (images, _) in enumerate(tqdm(dataloader)):
             images = images.to(self.device)
             features = self.extract_features(images)
             all_features.append(features.cpu().numpy())
-        
+        total_time2 = time.time() - start_time2
+        print(f"Extraction complete in {total_time2:.2f} seconds!")
+
         # Concatenate all features
         all_features = np.concatenate(all_features, axis=0)
         all_features = all_features.reshape(-1, all_features.shape[-1])
@@ -366,35 +366,24 @@ class SimplePatchCore:
         dataset = SimpleImageDataset(val_dir, transform=self.transform_test,
                                    mask_method=self.mask_method, mask_params=self.mask_params)
         
-        # Use batched processing for validation
-        batch_size = 16 if self.device == 'cuda' else 8
-        dataloader = DataLoader(
-            dataset, 
-            batch_size=batch_size, 
-            shuffle=False, 
-            num_workers=4,
-            pin_memory=(self.device == 'cuda')
-        )
-        
+        # Use all validation images
         all_scores = []
         
-        for images, _ in tqdm(dataloader, desc="Validation"):
-            images = images.to(self.device)
+        for idx in tqdm(range(len(dataset)), desc="Validation"):
+            img, _ = dataset[idx]
+            img_batch = img.unsqueeze(0).to(self.device)
             
             # Extract features
-            features = self.extract_features(images)
+            features = self.extract_features(img_batch)
+            features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
             
-            # Process each image in the batch
-            for i in range(features.shape[0]):
-                img_features = features[i].cpu().numpy()
-                
-                # Project if needed
-                if self.projection is not None:
-                    img_features = self.projection.transform(img_features)
-                
-                # Calculate anomaly score
-                score = self.calculate_anomaly_score(img_features)
-                all_scores.append(score)
+            # Project if needed
+            if self.projection is not None:
+                features_np = self.projection.transform(features_np)
+            
+            # Calculate anomaly score
+            score = self.calculate_anomaly_score(features_np)
+            all_scores.append(score)
         
         # Set threshold
         self.global_threshold = np.percentile(all_scores, percentile)
@@ -402,8 +391,7 @@ class SimplePatchCore:
         print(f"\nValidation threshold calculated:")
         print(f"  - Based on {len(all_scores)} validation images")
         print(f"  - {percentile}th percentile: {self.global_threshold:.4f}")
-        print(f"  - Score distribution: min={min(all_scores):.6f}, "
-              f"max={max(all_scores):.6f}, mean={np.mean(all_scores):.6f}")
+        print(f"  - Score distribution: min={min(all_scores):.6f}, max={max(all_scores):.6f}, mean={np.mean(all_scores):.6f}")
         
         return self.global_threshold
     
