@@ -389,7 +389,7 @@ class QTPatch_Inference_Controller(QMainWindow):
                 #-> In more chaotic settings, don't need to set this, because tiny anomalies are not detected anyway
                 import time
                 start_time = time.perf_counter()
-                result_filtered = self.patchcore_model.predict(temp_path, return_heatmap=True, min_region_size=50)
+                result_filtered = self.patchcore_model.predict(temp_path, return_heatmap=True, min_region_size=140)
                 end_time = time.perf_counter()
                 execution_time = end_time - start_time
                 print(f"Prediction overall took {execution_time:.4f} seconds")
