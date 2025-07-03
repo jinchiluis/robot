@@ -95,11 +95,11 @@ class SimplePatchCore:
         self.use_faiss_inference = False
         if self.device == 'cuda':
             gpu_name = torch.cuda.get_device_properties(0).name
-            if "3060" in gpu_name and FAISS_AVAILABLE:
+            if "060" in gpu_name and FAISS_AVAILABLE:
                 self.use_faiss_inference = True
-                print(f"✓ Detected {gpu_name} - using FAISS for inference")
+                print(f"✓ Detected {gpu_name} in init - using FAISS for inference")
             else:
-                print(f"✓ Detected {gpu_name} - using PyTorch for inference")   
+                print(f"✓ Detected {gpu_name} in init- using PyTorch for inference")   
 
         # Store normalization parameters
         self.feature_mean = None
@@ -715,7 +715,7 @@ class SimplePatchCore:
             # Determine inference method based on GPU (same logic as __init__)
             if self.device == 'cuda':
                 gpu_name = torch.cuda.get_device_properties(0).name
-                if "3060" in gpu_name and FAISS_AVAILABLE:
+                if "060" in gpu_name and FAISS_AVAILABLE:
                     # Setup FAISS for 3060
                     self.use_faiss_inference = True
                     self.faiss_index = self.setup_faiss_index(self.memory_bank)
