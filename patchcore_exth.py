@@ -297,19 +297,20 @@ class SimplePatchCore:
        #     prefetch_factor=4 if num_workers > 0 else None
        # )
         
-        dataloader = DataLoader(dataset, batch_size=8, shuffle=False, num_workers=4)
+        dataloader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=4)
         
         all_features = []
         
         # Extract features
-        start_time2 = time.time()
+        
         print(f"Extracting multi-layer features from {len(dataloader)} batches...")
+        start_time2 = time.time()
         for batch_idx, (images, _) in enumerate(tqdm(dataloader)):
             images = images.to(self.device)
             features = self.extract_features(images)
             all_features.append(features.cpu().numpy())
         total_time2 = time.time() - start_time2
-        print(f"Extraction complete in {total_time2:.2f} seconds!")
+        print(f"Extracted {total_time2:.2f} seconds!")    
 
         # Concatenate all features
         all_features = np.concatenate(all_features, axis=0)
@@ -812,20 +813,6 @@ class SimpleImageDataset(Dataset):
        self.images = sorted(unique_paths)
        
        print(f"Found {len(self.images)} unique images in {root_dir}")
-       
-       # Pre-cache images if dataset is small (optional optimization)
-       self.cache_images = len(self.images) < 1000
-       self.image_cache = {}
-       
-       if self.cache_images:
-           print("Pre-caching images for faster training...")
-           from tqdm import tqdm
-           for img_path in tqdm(self.images):
-               try:
-                   image = Image.open(img_path).convert('RGB')
-                   self.image_cache[str(img_path)] = image
-               except Exception as e:
-                   print(f"Error loading {img_path}: {e}")
    
    def __len__(self):
        return len(self.images)
@@ -833,11 +820,7 @@ class SimpleImageDataset(Dataset):
    def __getitem__(self, idx):
        img_path = self.images[idx]
        
-       # Use cache if available
-       if self.cache_images and str(img_path) in self.image_cache:
-           image = self.image_cache[str(img_path)].copy()
-       else:
-           image = Image.open(img_path).convert('RGB')
+       image = Image.open(img_path).convert('RGB')
        
        # Apply background masking if configured
        if self.masker and self.mask_method:

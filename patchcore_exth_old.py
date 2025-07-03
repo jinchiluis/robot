@@ -241,14 +241,14 @@ class SimplePatchCore:
         all_features = []
         
         # Extract features
-        start_time2 = time.time()
         print(f"Extracting multi-layer features from {len(dataloader)} batches...")
         for batch_idx, (images, _) in enumerate(tqdm(dataloader)):
+            start_time2 = time.time()
             images = images.to(self.device)
+            total_time2 = time.time() - start_time2
+            print(f"Images in {total_time2:.2f} seconds!")    
             features = self.extract_features(images)
             all_features.append(features.cpu().numpy())
-        total_time2 = time.time() - start_time2
-        print(f"Extraction complete in {total_time2:.2f} seconds!")    
         
         # Concatenate all features
         all_features = np.concatenate(all_features, axis=0)
