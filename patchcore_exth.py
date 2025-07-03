@@ -68,12 +68,12 @@ class SimplePatchCore:
         self.model.eval()
         
         # Compile model for faster inference (PyTorch 2.0+)
-        if hasattr(torch, 'compile') and device == 'cuda':
-            try:
-                self.model = torch.compile(self.model, mode='reduce-overhead')
-                print("✓ Model compiled with torch.compile")
-            except:
-                print("⚠️ torch.compile not available or failed")
+        #if hasattr(torch, 'compile') and device == 'cuda':
+        #    try:
+        #        self.model = torch.compile(self.model, mode='reduce-overhead')
+        #        print("✓ Model compiled with torch.compile")
+        #    except:
+        #        print("⚠️ torch.compile not available or failed")
 
         # Masker
         self.mask_method = mask_method
@@ -279,23 +279,23 @@ class SimplePatchCore:
                                    mask_method=self.mask_method, mask_params=self.mask_params)
         
         # Optimized dataloader settings
-        if self.device == 'cuda':
-            gpu_mem = torch.cuda.get_device_properties(0).total_memory
-            batch_size = 32 if gpu_mem > 10e9 else 16
-        else:
-            batch_size = 8
+        #if self.device == 'cuda':
+        #    gpu_mem = torch.cuda.get_device_properties(0).total_memory
+        #    batch_size = 32 if gpu_mem > 10e9 else 16
+        #else:
+        #    batch_size = 8
         
-        num_workers = min(16, os.cpu_count() or 4)
+        #num_workers = min(16, os.cpu_count() or 4)
         
        # dataloader = DataLoader(
-       ##     dataset, 
-       #     batch_size=batch_size, 
-        #    shuffle=False, 
+       #     dataset,
+       #     batch_size=batch_size,
+       #     shuffle=False,
        #     num_workers=num_workers,
        #     pin_memory=(self.device == 'cuda'),
        #     persistent_workers=(num_workers > 0),
-        #    prefetch_factor=4 if num_workers > 0 else None
-        #)
+       #     prefetch_factor=4 if num_workers > 0 else None
+       # )
         
         dataloader = DataLoader(dataset, batch_size=8, shuffle=False, num_workers=4)
         
@@ -724,6 +724,8 @@ class SimplePatchCore:
                 print("✓ Using PyTorch for inference (CPU mode)")
     
         print(f"✓ Model loaded from: {path}")
+        print("Index type:", type(self.faiss_index))
+        print("Bank size :", len(self.memory_bank))
 
     def debug_region_sizes(self, image_path):
         """Debug function to understand region sizes"""

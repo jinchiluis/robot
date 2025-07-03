@@ -6,6 +6,7 @@ Newest Version: GPU Pytorch for coreset sampling instead of FAISS + Seamless Hea
   -> 25x faster + Beautiful anomaly visualization
 """
 
+from xml.parsers.expat import model
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -20,6 +21,7 @@ import cv2
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy.ndimage import gaussian_filter
+import time
 try:
     import faiss
     FAISS_AVAILABLE = True
@@ -34,8 +36,12 @@ from bgmasker import BackgroundMasker
 class SimplePatchCore:
     """Fixed PatchCore with consistent feature extraction"""
     
-    def __init__(self, backbone='wide_resnet50_2', device='cuda' if torch.cuda.is_available() else 'cpu', mask_method=None, mask_params=None):
+    def __init__(self, backbone='wide_resnet50_2', device='cpu', mask_method=None, mask_params=None):
         self.device = device
+
+        "This version is optimized for INFERENCE: CPU FAISS and scipy"
+        "                              TRAINING: GPU PyTorch if available, else CPU Torch"
+        self.device = 'cpu'
         
         if backbone == 'wide_resnet50_2':
             self.model = models.wide_resnet50_2(weights=models.Wide_ResNet50_2_Weights.IMAGENET1K_V1)
@@ -235,11 +241,14 @@ class SimplePatchCore:
         all_features = []
         
         # Extract features
+        start_time2 = time.time()
         print(f"Extracting multi-layer features from {len(dataloader)} batches...")
         for batch_idx, (images, _) in enumerate(tqdm(dataloader)):
             images = images.to(self.device)
             features = self.extract_features(images)
             all_features.append(features.cpu().numpy())
+        total_time2 = time.time() - start_time2
+        print(f"Extraction complete in {total_time2:.2f} seconds!")    
         
         # Concatenate all features
         all_features = np.concatenate(all_features, axis=0)
@@ -333,9 +342,12 @@ class SimplePatchCore:
         """
         if self.faiss_index is not None and FAISS_AVAILABLE:
             # Use FAISS for fast search
+            start_time = time.perf_counter()
             distances, _ = self.faiss_index.search(features.astype(np.float32), k=1)
             #min_distances = distances.squeeze()
             min_distances = np.sqrt(distances.squeeze())
+            execution_time = time.perf_counter() - start_time
+            print(f"FAISS took {execution_time:.4f} seconds")
         else:
             # Fallback to scipy
             distances = cdist(features, self.memory_bank, metric='euclidean')
@@ -435,7 +447,10 @@ class SimplePatchCore:
        image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
        
        # Extract features
+       start_time2 = time.time()
        features = self.extract_features(image_tensor)
+       total_time2 = time.time() - start_time2
+       print(f"Extraction complete in {total_time2:.2f} seconds!")
        features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
        
        # Project if needed
@@ -636,6 +651,9 @@ class SimplePatchCore:
                 self.faiss_index = None
         
         print(f"✓ Model loaded from: {path}")
+        print("Index type:", type(self.faiss_index))
+        print("Bank size :", len(self.memory_bank))
+        print(f"self.device: {self.device}")
 
     def debug_region_sizes(self, image_path):
         """Debug function to understand the relationship between feature and image space"""
