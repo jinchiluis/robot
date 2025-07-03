@@ -403,7 +403,7 @@ class QTPatch_Inference_Controller(QMainWindow):
                 self.last_anomaly_score = anomaly_score
         
                 # Update UI with both scores
-                self.anomaly_score_label.setText(f"Score normal: {anomaly_score:.4f}")
+                self.anomaly_score_label.setText(f"Anomaly Score: {anomaly_score:.4f}")
                 status_text = "ANOMALY" if is_anomaly else "NORMAL"
                 self.anomaly_status_label.setText(f"Status: {status_text}")
         
