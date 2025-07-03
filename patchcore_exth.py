@@ -424,7 +424,6 @@ class SimplePatchCore:
     
         # Choose inference method based on GPU
         print(f"use_faiss_inference: {self.use_faiss_inference} ")
-        print(f"self.faiss_index: {self.faiss_index}  ")
         if self.use_faiss_inference and self.faiss_index is not None:
             # FAISS path for 3060
             start_time = time.perf_counter()
@@ -433,7 +432,7 @@ class SimplePatchCore:
             execution_time = time.perf_counter() - start_time
             print(f"FAISS took {execution_time:.4f} seconds")
         elif self.device == 'cuda' and self.memory_bank_torch is not None:
-            # PyTorch path for 4060 - KEEP ALL YOUR OPTIMIZATIONS!
+            # PyTorch path for 4060 
             features_torch = torch.from_numpy(features).float().to(self.device)
         
             # Use batched distance calculation
