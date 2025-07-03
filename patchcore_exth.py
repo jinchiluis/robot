@@ -714,6 +714,7 @@ class SimplePatchCore:
         
             # Determine inference method based on GPU (same logic as __init__)
             if self.device == 'cuda':
+
                 gpu_name = torch.cuda.get_device_properties(0).name
                 if "060" in gpu_name and FAISS_AVAILABLE:
                     # Setup FAISS for 3060
@@ -838,84 +839,3 @@ class SimpleImageDataset(Dataset):
            image = self.transform(image)
        
        return image, str(img_path)
-
-
-# Utility functions for testing
-def benchmark_inference(model, test_images, num_runs=10):
-   """Benchmark inference speed"""
-   import time
-   
-   times = []
-   
-   for img_path in test_images[:num_runs]:
-       start = time.perf_counter()
-       result = model.predict(img_path, return_heatmap=False)
-       end = time.perf_counter()
-       times.append(end - start)
-   
-   avg_time = np.mean(times)
-   std_time = np.std(times)
-   
-   print(f"\nInference benchmark results:")
-   print(f"  Average time: {avg_time*1000:.2f} ms")
-   print(f"  Std deviation: {std_time*1000:.2f} ms")
-   print(f"  Min time: {min(times)*1000:.2f} ms")
-   print(f"  Max time: {max(times)*1000:.2f} ms")
-   
-   return times
-
-
-def profile_memory_usage(model):
-   """Profile GPU memory usage"""
-   if torch.cuda.is_available():
-       torch.cuda.empty_cache()
-       torch.cuda.synchronize()
-       
-       allocated = torch.cuda.memory_allocated() / 1024**2  # MB
-       reserved = torch.cuda.memory_reserved() / 1024**2    # MB
-       
-       print(f"\nGPU Memory usage:")
-       print(f"  Allocated: {allocated:.2f} MB")
-       print(f"  Reserved: {reserved:.2f} MB")
-       
-       if hasattr(model, 'memory_bank_torch') and model.memory_bank_torch is not None:
-           mb_size = model.memory_bank_torch.element_size() * model.memory_bank_torch.nelement() / 1024**2
-           print(f"  Memory bank size: {mb_size:.2f} MB")
-
-
-# Example usage
-if __name__ == "__main__":
-   # Initialize model
-   model = SimplePatchCore(backbone='wide_resnet50_2', device='cuda')
-   
-   # Train
-   model.fit(
-       train_dir="path/to/normal/images",
-       sample_ratio=0.1,  # 10% coreset
-       threshold_percentile=99,
-       val_dir="path/to/validation/images"  # Optional separate validation
-   )
-   
-   # Save model
-   model.save("optimized_patchcore_model.pth")
-   
-   # Load and test
-   model2 = SimplePatchCore(backbone='wide_resnet50_2', device='cuda')
-   model2.load("optimized_patchcore_model.pth")
-   
-   # Predict
-   result = model2.predict(
-       "path/to/test/image.jpg",
-       return_heatmap=True,
-       min_region_size=131  # For 512x512 images
-   )
-   
-   print(f"Anomaly score: {result['anomaly_score']:.4f}")
-   print(f"Is anomaly: {result['is_anomaly']}")
-   
-   # Profile performance
-   profile_memory_usage(model2)
-   
-   # Benchmark
-   test_images = ["image1.jpg", "image2.jpg", "image3.jpg"]
-   benchmark_inference(model2, test_images)
