@@ -153,17 +153,15 @@ class SimplePatchCore:
         return features
     
     def extract_features(self, images, return_spatial=False):
-        """Optimized feature extraction with mixed precision"""
+        """Extract multi-scale features"""
         features = []
         spatial_features = []
         
-        # Use automatic mixed precision for faster computation
-        #with torch.amp.autocast(device_type='cuda', enabled=(self.device == 'cuda')): <- makes it 0.1 seconds slower
         with torch.no_grad():
             _ = self.model(images)
-                
+            
             reference_size = None
-                
+            
             for i, layer_name in enumerate(self.feature_layers):
                 layer_features = self.feature_extractor[layer_name]
                 b, c, h, w = layer_features.shape
@@ -171,7 +169,7 @@ class SimplePatchCore:
                 if reference_size is None:
                     reference_size = (h, w)
                     self.feature_map_size = reference_size
-                    
+                
                 if (h, w) != reference_size:
                     layer_features = torch.nn.functional.interpolate(
                         layer_features, 
@@ -179,15 +177,13 @@ class SimplePatchCore:
                         mode='bilinear', 
                         align_corners=False
                     )
-                    
+                
                 if return_spatial:
                     spatial_features.append(layer_features)
-                    
-                # More efficient reshape
-                layer_features = layer_features.permute(0, 2, 3, 1).contiguous()
-                layer_features = layer_features.view(b, -1, c)
+                
+                layer_features = layer_features.permute(0, 2, 3, 1).reshape(b, reference_size[0]*reference_size[1], c)
                 features.append(layer_features)
-
+        
         features = torch.cat(features, dim=-1)
         
         if return_spatial:
