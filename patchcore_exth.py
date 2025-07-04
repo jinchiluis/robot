@@ -69,21 +69,13 @@ class SimplePatchCore:
         
         # Storage
         self.memory_bank = None
-        self.memory_bank_torch = None  # PyTorch tensor version for fast inference
         self.global_threshold = None
         self.projection = None
-        self.faiss_index = None  # Kept for backward compatibility
-        
-        # Determine inference method based on GPU
-        self.use_faiss_inference = False
-        if self.device == 'cuda':
-            gpu_name = torch.cuda.get_device_properties(0).name
-            if "060" in gpu_name and FAISS_AVAILABLE:
-                self.use_faiss_inference = True
-                print(f"✓ Detected {gpu_name} in init - using FAISS for inference")
-            else:
-                print(f"✓ Detected {gpu_name} in init- using PyTorch for inference")   
+        self.faiss_index = None
 
+        # Inferenz-Backend: Immer FAISS wenn verfügbar, sonst scipy
+        self.use_faiss_inference = FAISS_AVAILABLE
+        
         # Store normalization parameters
         self.feature_mean = None
         self.feature_std = None
@@ -305,13 +297,14 @@ class SimplePatchCore:
         
         self.memory_bank = all_features[selected_indices]
         print(f"Memory bank size: {self.memory_bank.shape}")
-        
-        # After creating memory bank
-        self.faiss_index = self.setup_faiss_index(self.memory_bank)
 
-        # Create PyTorch tensor version for fast inference
-        self.memory_bank_torch = torch.from_numpy(self.memory_bank).float().to(self.device)
-        
+        # FAISS-Index nur, wenn verfügbar
+        if FAISS_AVAILABLE:
+            self.faiss_index = self.setup_faiss_index(self.memory_bank)
+        else:
+            self.faiss_index = None
+
+        # Kein memory_bank_torch mehr!
         # Calculate threshold
         validation_dir = val_dir if val_dir is not None else train_dir
         if val_dir is not None:
@@ -360,55 +353,28 @@ class SimplePatchCore:
         return self.global_threshold
     
     def calculate_anomaly_score(self, features, return_patch_scores=False):
-        """Calculate anomaly score with GPU-specific optimizations"""
-        # Ensure features is 2D
+        """Calculate 2D anomaly score with FAISS or scipy fallback"""
         if len(features.shape) == 1:
             features = features.reshape(1, -1)
-    
-        # Choose inference method based on GPU
-        print(f"use_faiss_inference: {self.use_faiss_inference} ")
+
         if self.use_faiss_inference and self.faiss_index is not None:
-            # FAISS path for 3060
             start_time = time.perf_counter()
             distances, _ = self.faiss_index.search(features.astype(np.float32), k=1)
-            min_distances = np.sqrt(distances.squeeze())  # sqrt for FAISS!
+            min_distances = np.sqrt(distances.squeeze())
             execution_time = time.perf_counter() - start_time
             print(f"FAISS took {execution_time:.4f} seconds")
-        elif self.device == 'cuda' and self.memory_bank_torch is not None:
-            # PyTorch path for 4060 
-            features_torch = torch.from_numpy(features).float().to(self.device)
-        
-            # Use batched distance calculation
-            batch_size = 10000
-            min_distances = []
-        
-            for i in range(0, len(features_torch), batch_size):
-                batch = features_torch[i:i+batch_size]
-            
-                # Compute distances to memory bank
-                distances = torch.cdist(batch, self.memory_bank_torch)
-            
-                # Get minimum distance for each patch
-                batch_min_distances, _ = distances.min(dim=1)
-                min_distances.append(batch_min_distances)
-        
-            # Concatenate results
-            min_distances = torch.cat(min_distances).cpu().numpy()
         else:
             # Scipy fallback for CPU
             distances = cdist(features, self.memory_bank, metric='euclidean')
             min_distances = np.min(distances, axis=1)
-    
-        # Ensure min_distances is always 1D (as you noted!)
+        # 1D min_distances
         if len(min_distances.shape) == 0:
             min_distances = np.array([min_distances])
-    
+
         if return_patch_scores:
             return min_distances
-    
-        # Use max for anomaly score
+
         anomaly_score = np.max(min_distances)
-    
         return anomaly_score
     
     def generate_heatmap(self, image_path, patch_scores, alpha=0.5, colormap='jet', save_path=None):
@@ -546,10 +512,6 @@ class SimplePatchCore:
     
     def save(self, path):
         """Save model with all components"""
-        # Clear PyTorch tensor before saving to reduce file size
-        memory_bank_torch_device = self.memory_bank_torch.device if self.memory_bank_torch is not None else None
-        self.memory_bank_torch = None
-        
         torch.save({
             'memory_bank': self.memory_bank,
             'model_state': self.model.state_dict(),
@@ -560,11 +522,6 @@ class SimplePatchCore:
             'feature_mean': self.feature_mean,
             'feature_std': self.feature_std
         }, path)
-        
-        # Recreate PyTorch tensor
-        if self.memory_bank is not None and memory_bank_torch_device is not None:
-            self.memory_bank_torch = torch.from_numpy(self.memory_bank).float().to(memory_bank_torch_device)
-        
         print(f"Model saved to: {path}")
     
     def load(self, path):
@@ -578,29 +535,14 @@ class SimplePatchCore:
         self.feature_map_size = checkpoint.get('feature_map_size', None)
         self.feature_mean = checkpoint.get('feature_mean', None)
         self.feature_std = checkpoint.get('feature_std', None)
-        
-        # Create PyTorch tensor version for fast inference
-        if self.memory_bank is not None:
-            self.memory_bank_torch = torch.from_numpy(self.memory_bank).float().to(self.device)
+
+        # FAISS-Index immer neu bauen, wenn verfügbar
+        if self.memory_bank is not None and FAISS_AVAILABLE:
+            self.faiss_index = self.setup_faiss_index(self.memory_bank)
             print(f"✓ Memory bank loaded: {self.memory_bank.shape}")
-        
-            # Determine inference method based on GPU (same logic as __init__)
-            if self.device == 'cuda':
-                gpu_name = torch.cuda.get_device_properties(0).name
-                if "060" in gpu_name and FAISS_AVAILABLE:
-                    # Setup FAISS for 3060
-                    self.use_faiss_inference = True
-                    self.faiss_index = self.setup_faiss_index(self.memory_bank)
-                    print(f"✓ Using FAISS for inference (optimized for {gpu_name})")
-                else:
-                    # Use PyTorch for 4060 and other GPUs
-                    self.use_faiss_inference = False
-                    print(f"✓ Using PyTorch for inference (optimized for {gpu_name})")
-            else:
-                # CPU fallback
-                self.use_faiss_inference = False
-                print("✓ Using PyTorch for inference (CPU mode)")
-    
+        else:
+            self.faiss_index = None
+
         print(f"✓ Model loaded from: {path}")
         print("Index type:", type(self.faiss_index))
         print("Bank size :", len(self.memory_bank))
