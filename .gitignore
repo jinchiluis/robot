@@ -30,3 +30,11 @@ models/
 
 .git-backup/
 config/config.json
+
+# PyInstaller
+build/
+dist/
+*.spec
+__pycache__/
+*.py[cod]
+*$py.class

@@ -17,7 +17,7 @@ class QTMain_Controller(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PatchCore Vision System")
-        self.setGeometry(100, 100, 1000, 670)
+        self.setGeometry(100, 100, 1000, 870)
         
         # Setup UI
         self.setup_ui()
