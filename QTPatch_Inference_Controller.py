@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QFileDialog,
                                QPushButton, QLabel, QTextEdit, QStatusBar)
 import winsound
 from QTCamera import QTCamera
-from patchcore_exth import SimplePatchCore
+from patchcore_exth import PatchCore
 from coordinate_transformer import CoordinateTransformer
 from QTRobot import QTRobot
 from QTPatch_Inference_UI import setup_ui, update_ui_state
@@ -134,7 +134,7 @@ class QTPatch_Inference_Controller(QMainWindow):
                 # Take the most recently modified file
                 model_file = max(model_files, key=lambda f: f.stat().st_mtime)
                 try:
-                    self.patchcore_model = SimplePatchCore(device='cuda' if cv2.cuda.getCudaEnabledDeviceCount() > 0 else 'cpu')
+                    self.patchcore_model = PatchCore()
                     self.patchcore_model.load(str(model_file))
                     self.model_loaded = True
                     self.model_status_label.setText(f"Model: {model_file.name}")
@@ -217,7 +217,7 @@ class QTPatch_Inference_Controller(QMainWindow):
         
         if file_path:
             try:
-                self.patchcore_model = SimplePatchCore(device='cuda' if cv2.cuda.getCudaEnabledDeviceCount() > 0 else 'cpu')
+                self.patchcore_model = PatchCore()
                 self.patchcore_model.load(file_path)
                 self.model_loaded = True
                 self.model_status_label.setText(f"Model: {Path(file_path).name}")

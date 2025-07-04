@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QMessageBox,
                                QHBoxLayout, QVBoxLayout, QFormLayout)
 
 from QTCamera import QTCamera
-from patchcore_exth import SimplePatchCore
+from patchcore_exth import PatchCore
 from QTPatch_Training_UI import setup_ui
 
 
@@ -34,7 +34,7 @@ class TrainingThread(QThread):
     def run(self):
         try:
             self.status.emit("Initializing PatchCore model...")
-            self.model = SimplePatchCore(backbone=self.backbone)
+            self.model = PatchCore(backbone=self.backbone)
             
             self.status.emit("Training on normal samples...")
             self.model.fit(

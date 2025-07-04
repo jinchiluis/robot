@@ -32,11 +32,10 @@ except ImportError:
     FAISS_AVAILABLE = False
 
 
-class SimplePatchCore:
+class PatchCore:
     """Optimized PatchCore with PyTorch-based inference and lazy initialization"""
     
-    def __init__(self, backbone='wide_resnet50_2', device='cuda'):
-        self.device = device
+    def __init__(self, backbone='wide_resnet50_2'):
         if torch.cuda.is_available():
             self.device = 'cuda'
         else:
@@ -73,9 +72,6 @@ class SimplePatchCore:
         self.projection = None
         self.faiss_index = None
 
-        # Inferenz-Backend: Immer FAISS wenn verfügbar, sonst scipy
-        self.use_faiss_inference = FAISS_AVAILABLE
-        
         # Store normalization parameters
         self.feature_mean = None
         self.feature_std = None
@@ -291,13 +287,12 @@ class SimplePatchCore:
         self.memory_bank = all_features[selected_indices]
         print(f"Memory bank size: {self.memory_bank.shape}")
 
-        # FAISS-Index nur, wenn verfügbar
+        # FAISS-Index
         if FAISS_AVAILABLE:
             self.faiss_index = self.setup_faiss_index(self.memory_bank)
         else:
             self.faiss_index = None
 
-        # Kein memory_bank_torch mehr!
         # Calculate threshold
         validation_dir = val_dir if val_dir is not None else train_dir
         if val_dir is not None:
@@ -351,7 +346,7 @@ class SimplePatchCore:
         if len(features.shape) == 1:
             features = features.reshape(1, -1)
 
-        if self.use_faiss_inference and self.faiss_index is not None:
+        if FAISS_AVAILABLE and self.faiss_index is not None:
             distances, _ = self.faiss_index.search(features.astype(np.float32), k=1)
             min_distances = np.sqrt(distances.squeeze())
         else:
