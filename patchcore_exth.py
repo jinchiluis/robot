@@ -41,6 +41,9 @@ class SimplePatchCore:
             self.device = 'cuda'
         else:
             self.device = 'cpu'
+        self.backbone = backbone
+        self.model = None
+        self.feature_layers = ['layer2', 'layer3']
 
         print(f"self.device: {self.device} ")
         print(f"PyTorch version: {torch.__version__}")
@@ -131,20 +134,19 @@ class SimplePatchCore:
         """Extract multi-scale features"""
         features = []
         spatial_features = []
-        
+    
         with torch.no_grad():
             _ = self.model(images)
-            
             reference_size = None
-            
+        
             for i, layer_name in enumerate(self.feature_layers):
                 layer_features = self.feature_extractor[layer_name]
                 b, c, h, w = layer_features.shape
-                
+            
                 if reference_size is None:
                     reference_size = (h, w)
                     self.feature_map_size = reference_size
-                
+            
                 if (h, w) != reference_size:
                     layer_features = torch.nn.functional.interpolate(
                         layer_features, 
@@ -152,19 +154,19 @@ class SimplePatchCore:
                         mode='bilinear', 
                         align_corners=False
                     )
-                
+            
                 if return_spatial:
                     spatial_features.append(layer_features)
-                
+            
                 layer_features = layer_features.permute(0, 2, 3, 1).reshape(b, reference_size[0]*reference_size[1], c)
                 features.append(layer_features)
-        
-        features = torch.cat(features, dim=-1)
-        
+    
+            features = torch.cat(features, dim=-1)
+      
         if return_spatial:
             spatial_features = torch.cat(spatial_features, dim=1)
             return features, spatial_features
-        
+    
         return features
     
     def adaptive_sampling(self, features, sampling_ratio=0.01):
@@ -354,15 +356,13 @@ class SimplePatchCore:
     
     def calculate_anomaly_score(self, features, return_patch_scores=False):
         """Calculate 2D anomaly score with FAISS or scipy fallback"""
+        start_time = time.perf_counter()
         if len(features.shape) == 1:
             features = features.reshape(1, -1)
 
         if self.use_faiss_inference and self.faiss_index is not None:
-            start_time = time.perf_counter()
             distances, _ = self.faiss_index.search(features.astype(np.float32), k=1)
             min_distances = np.sqrt(distances.squeeze())
-            execution_time = time.perf_counter() - start_time
-            print(f"FAISS took {execution_time:.4f} seconds")
         else:
             # Scipy fallback for CPU
             distances = cdist(features, self.memory_bank, metric='euclidean')
@@ -371,6 +371,8 @@ class SimplePatchCore:
         if len(min_distances.shape) == 0:
             min_distances = np.array([min_distances])
 
+        execution_time = time.perf_counter() - start_time
+        print(f"calculate anomaly took {execution_time:.4f} seconds")
         if return_patch_scores:
             return min_distances
 
@@ -379,24 +381,14 @@ class SimplePatchCore:
     
     def generate_heatmap(self, image_path, patch_scores, alpha=0.5, colormap='jet', save_path=None):
         """Fast heatmap generation"""
-        start_time = time.perf_counter()
+        start_timei = time.perf_counter()
 
         image = Image.open(image_path).convert('RGB')
         image_np = np.array(image)
         image_height, image_width = image_np.shape[:2]
         
-        image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
-        
-        # Extract features
-        features = self.extract_features(image_tensor)
-        features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
-        
-        if self.projection is not None:
-            features_np = self.projection.transform(features_np)
-        
-        # Get patch scores
-        #patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
-        
+        #image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
+
         h, w = self.feature_map_size
         score_map = patch_scores.reshape(h, w)
         
@@ -406,7 +398,7 @@ class SimplePatchCore:
             (image_width, image_height), 
             interpolation=cv2.INTER_LINEAR
         )
-        
+
         # Smooth the score map
         score_map_smooth = gaussian_filter(score_map_resized, sigma=2.0)
         
@@ -416,7 +408,7 @@ class SimplePatchCore:
             score_map_norm = (score_map_smooth - score_min) / (score_max - score_min)
         else:
             score_map_norm = np.zeros_like(score_map_smooth)
-        
+
         # Apply colormap
         cmap = cm.get_cmap(colormap)
         heatmap_colored = cmap(score_map_norm)[:, :, :3]
@@ -426,13 +418,10 @@ class SimplePatchCore:
         overlay = (image_np.astype(np.float32) * (1.0 - alpha) + 
                   heatmap_colored.astype(np.float32) * alpha)
         overlay = np.clip(overlay, 0, 255).astype(np.uint8)
-        
         if save_path:
             Image.fromarray(overlay).save(save_path)
-
-        execution_time = time.perf_counter() - start_time
-        print(f"Heatmap generation took {execution_time:.4f} seconds")
-        
+        execution_timei = time.perf_counter() - start_timei
+        print(f"Heatmap generation  {execution_timei:.4f} seconds")
         return overlay
 
     def predict(self, image_path, return_heatmap=True, min_region_size=None):
@@ -443,14 +432,17 @@ class SimplePatchCore:
         
         image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
         
-        # Extract features
+  
+        # Extract features will take the most time 
         features = self.extract_features(image_tensor)
+
+        # Doesnt take too much time
         features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
-        
+
         # Project if needed
         if self.projection is not None:
-            features_np = self.projection.transform(features_np)
-        
+            features_np = self.projection.transform(features_np) 
+
         # Calculate score
         patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
         anomaly_score = np.max(patch_scores)
