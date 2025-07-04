@@ -16,7 +16,6 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans
 from sklearn.random_projection import GaussianRandomProjection
-import cv2
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy.ndimage import gaussian_filter
@@ -24,6 +23,7 @@ from pathlib import Path
 from tqdm import tqdm
 import os
 import time
+import cv2
 
 try:
     import faiss
@@ -33,7 +33,7 @@ except ImportError:
 
 
 class SimplePatchCore:
-    """Optimized PatchCore with PyTorch-based inference"""
+    """Optimized PatchCore with PyTorch-based inference and lazy initialization"""
     
     def __init__(self, backbone='wide_resnet50_2', device='cuda'):
         self.device = device
@@ -41,9 +41,6 @@ class SimplePatchCore:
             self.device = 'cuda'
         else:
             self.device = 'cpu'
-        self.backbone = backbone
-        self.model = None
-        self.feature_layers = ['layer2', 'layer3']
 
         print(f"self.device: {self.device} ")
         print(f"PyTorch version: {torch.__version__}")
@@ -101,35 +98,29 @@ class SimplePatchCore:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                                std=[0.229, 0.224, 0.225])
         ])
-    
+        
     def _replace_batchnorm_with_groupnorm(self):
-        """Freeze BatchNorm layers to avoid batch size dependency"""
         for module in self.model.modules():
             if isinstance(module, nn.BatchNorm2d):
                 module.eval()
                 module.weight.requires_grad = False
                 module.bias.requires_grad = False
                 module.momentum = 0
-    
+
     def _replace_batchnorm_recursive(self, module):
-        """Not used - kept for compatibility"""
         pass
-    
+
     def _setup_feature_extractor(self):
-        """Setup multi-layer feature extraction"""
         features = {}
-        
         def hook_fn(name):
             def hook(module, input, output):
                 features[name] = output
             return hook
-        
         for name, module in self.model.named_modules():
             if name in self.feature_layers:
                 module.register_forward_hook(hook_fn(name))
-        
         return features
-    
+
     def extract_features(self, images, return_spatial=False):
         """Extract multi-scale features"""
         features = []
@@ -450,7 +441,6 @@ class SimplePatchCore:
         
         # Apply region-based filtering if requested
         if min_region_size is not None and is_anomaly:
-           
             # Reshape to spatial dimensions
             h, w = self.feature_map_size
             score_map = patch_scores.reshape(h, w)
@@ -538,71 +528,6 @@ class SimplePatchCore:
         print(f"✓ Model loaded from: {path}")
         print("Index type:", type(self.faiss_index))
         print("Bank size :", len(self.memory_bank))
-
-    def debug_region_sizes(self, image_path):
-        """Debug function to understand region sizes"""
-        # Load image
-        image = Image.open(image_path).convert('RGB')
-        image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
-        
-        # Extract features
-        features = self.extract_features(image_tensor)
-        features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
-        
-        # Get dimensions
-        h, w = self.feature_map_size
-        image_size = self.image_size
-        
-        print(f"Image size: {image_size}×{image_size}")
-        print(f"Feature map size: {h}×{w}")
-        print(f"Feature-to-image ratio: {image_size/h:.2f}×{image_size/w:.2f}")
-        print(f"Each feature pixel represents: {(image_size/h)*(image_size/w):.1f} image pixels")
-        print()
-        
-        # Project if needed
-        if self.projection is not None:
-            features_np = self.projection.transform(features_np)
-        
-        # Calculate patch scores
-        patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
-        score_map = patch_scores.reshape(h, w)
-        
-        # Create binary mask
-        binary_mask = (score_map > self.global_threshold).astype(np.uint8)
-        
-        # Find connected components
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
-        
-        print(f"Number of anomaly regions found: {num_labels - 1}")
-        
-        # Analyze each region
-        for i in range(1, num_labels):
-            area_feature = stats[i, cv2.CC_STAT_AREA]
-            area_image = area_feature * (image_size/h) * (image_size/w)
-            
-            x, y, width, height = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP], \
-                                  stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
-            
-            print(f"\nRegion {i}:")
-            print(f"  Feature space: {area_feature} pixels ({width}×{height})")
-            print(f"  Image space (approx): {area_image:.0f} pixels")
-            print(f"  Equivalent square size: {np.sqrt(area_image):.1f}×{np.sqrt(area_image):.1f} pixels")
-       
-        # Test different min_region_size values
-        print("\n" + "="*50)
-        print("Testing different min_region_size values:")
-        print("="*50)
-       
-        for min_size in [1, 2, 4, 8, 16, 25, 50]:
-           surviving_regions = 0
-           for i in range(1, num_labels):
-               if stats[i, cv2.CC_STAT_AREA] >= min_size:
-                   surviving_regions += 1
-           
-           equiv_image_pixels = min_size * (image_size/h) * (image_size/w)
-           print(f"min_region_size={min_size:3d} (feature space) ≈ {equiv_image_pixels:6.0f} image pixels "
-                 f"→ {surviving_regions} regions survive")
-
 
 class SimpleImageDataset(Dataset):
    """Optimized dataset for loading images"""
