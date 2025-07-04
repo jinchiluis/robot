@@ -411,7 +411,7 @@ class SimplePatchCore:
     
         return anomaly_score
     
-    def generate_heatmap(self, image_path, alpha=0.5, colormap='jet', save_path=None):
+    def generate_heatmap(self, image_path, patch_scores, alpha=0.5, colormap='jet', save_path=None):
         """Fast heatmap generation"""
         start_time = time.perf_counter()
 
@@ -429,7 +429,7 @@ class SimplePatchCore:
             features_np = self.projection.transform(features_np)
         
         # Get patch scores
-        patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
+        #patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
         
         h, w = self.feature_map_size
         score_map = patch_scores.reshape(h, w)
@@ -486,14 +486,13 @@ class SimplePatchCore:
             features_np = self.projection.transform(features_np)
         
         # Calculate score
-        anomaly_score = self.calculate_anomaly_score(features_np)
+        patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
+        anomaly_score = np.max(patch_scores)
         is_anomaly = anomaly_score > self.global_threshold
         
         # Apply region-based filtering if requested
         if min_region_size is not None and is_anomaly:
-            # Get patch-level scores
-            patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
-            
+           
             # Reshape to spatial dimensions
             h, w = self.feature_map_size
             score_map = patch_scores.reshape(h, w)
@@ -537,67 +536,7 @@ class SimplePatchCore:
         
         if return_heatmap:
             try:
-                heatmap = self.generate_heatmap(image_path)
-                result['heatmap'] = heatmap
-            except Exception as e:
-                print(f"Warning: Could not generate heatmap: {e}")
-                result['heatmap'] = None
-        
-        return result
-    
-    def predict_with_min_patch(self, image_path, return_heatmap=True, min_region_size=None):
-        """Predict with patch-based region filtering"""
-        # Load and preprocess
-        image = Image.open(image_path).convert('RGB')
-        
-        image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
-        
-        # Extract features
-        features = self.extract_features(image_tensor)
-        features_np = features.cpu().numpy().reshape(-1, features.shape[-1])
-        
-        # Project if needed
-        if self.projection is not None:
-            features_np = self.projection.transform(features_np)
-        
-        # Calculate score
-        anomaly_score = self.calculate_anomaly_score(features_np)
-        is_anomaly = anomaly_score > self.global_threshold
-        
-        # Apply region-based filtering if requested
-        if min_region_size is not None and is_anomaly:
-            patch_scores = self.calculate_anomaly_score(features_np, return_patch_scores=True)
-            
-            h, w = self.feature_map_size
-            score_map = patch_scores.reshape(h, w)
-            
-            binary_mask = (score_map > self.global_threshold).astype(np.uint8)
-            
-            num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
-            
-            large_regions_exist = False
-            for i in range(1, num_labels):
-                area = stats[i, cv2.CC_STAT_AREA]
-                if area >= min_region_size:
-                    large_regions_exist = True
-                    break
-            
-            if not large_regions_exist:
-                is_anomaly = False
-        
-        result = {
-            'anomaly_score': float(anomaly_score),
-            'is_anomaly': bool(is_anomaly),
-            'threshold': float(self.global_threshold)
-        }
-        
-        if min_region_size is not None:
-            result['min_region_size'] = min_region_size
-            result['region_filtered'] = not is_anomaly and anomaly_score > self.global_threshold
-        
-        if return_heatmap:
-            try:
-                heatmap = self.generate_heatmap(image_path)
+                heatmap = self.generate_heatmap(image_path, patch_scores)
                 result['heatmap'] = heatmap
             except Exception as e:
                 print(f"Warning: Could not generate heatmap: {e}")
