@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""
-Advanced PatchCore Implementation with Performance Optimizations
-- PyTorch-based nearest neighbor search (replacing FAISS)
-- Optimized training with mixed precision and better data loading
-- Faster coreset sampling with GPU acceleration
-"""
-
+"""PatchCore 1.0"""
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -14,14 +8,11 @@ from torch.utils.data import DataLoader, Dataset
 from PIL import Image
 import numpy as np
 from scipy.spatial.distance import cdist
-from sklearn.cluster import KMeans
 from sklearn.random_projection import GaussianRandomProjection
-import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy.ndimage import gaussian_filter
 from pathlib import Path
 from tqdm import tqdm
-import os
 import time
 import cv2
 
@@ -372,8 +363,6 @@ class PatchCore:
         image = Image.open(image_path).convert('RGB')
         image_np = np.array(image)
         image_height, image_width = image_np.shape[:2]
-        
-        #image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
 
         h, w = self.feature_map_size
         score_map = patch_scores.reshape(h, w)
@@ -414,10 +403,7 @@ class PatchCore:
         """Predict with region filtering"""
         # Load and preprocess
         image = Image.open(image_path).convert('RGB')
-        original_size = image.size
-        
-        image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
-        
+        image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)        
   
         # Extract features will take the most time 
         features = self.extract_features(image_tensor)
