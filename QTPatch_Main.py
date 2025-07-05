@@ -33,7 +33,7 @@ class QTMain_Controller(QMainWindow):
         
         # Create controllers
         self.training_controller = QTPatch_Training_Controller()
-        self.inference_controller = QTPatch_Inference_Controller(500,0,400,400)
+        self.inference_controller = QTPatch_Inference_Controller(0,0,1920,1080)
         
         # Create scroll areas for each controller
         self.training_scroll = QScrollArea()

@@ -11,8 +11,7 @@
 
 python>=3.10
 numpy
-opencv          # provides cv2
-pandas
+#opencv          # provides cv2! NOOOO very bad idea, use opencv-python-headless instead
 pillow          # provides PIL
 requests
 tqdm
@@ -37,7 +36,8 @@ faiss-cpu       # for fast nearest neighbor search (optional, but recommended)
 
 # ------------------------------
 
-pygame          # for sound playback
+opencv-python-headless
+mathplotlib
 #ultralytics            # YOLOv8 implementation
 #streamlit-image-coordinates
 

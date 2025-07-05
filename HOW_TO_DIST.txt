@@ -1,0 +1,83 @@
+CONDA-PACK für environment!
+
+1. conda install -c conda-forge conda-pack
+
+2. wenn du gerade in der Umgebung bist:
+   conda pack -o conda_env.tar.gz
+
+3. auspacken:
+   tar -xzf meine_app.tar.gz 
+
+-------
+PYC und LAUCHER.EXE erstellen
+
+1. # compile_all.py erstellen und ausführen:
+   import compileall
+   import os
+
+   # Kompiliert alle .py Files zu .pyc
+   compileall.compile_dir('.', force=True, legacy=True)
+
+2. mkdir lib
+   # Alle pyc hier reinkopieren
+
+3. Launcher.py erstellen (siehe ganz unten)
+   Nicht normal starten, sondern mit pyinstaller
+
+4. pyinstaller --onefile --noconsole launcher.py
+
+5. mkdir release
+   # Dort die lib/ und launcher.exe kopieren
+
+6. Hierher Conda Env entpacken (siehe oben) und launcher.exe starten
+
+--------
+INNO SETUP für professionalle Installation
+
+1. Download https://jrsoftware.org/isinfo.php
+
+2. Follow the wizard
+
+----------------
+----------------
+Launcher Code:
+
+# launcher_final.py
+import subprocess
+import os
+import sys
+import time
+
+# Debug nur wenn console da ist
+if sys.stdout:
+    print("=== LAUNCHER START ===")
+
+# Basis-Pfad ermitteln
+if getattr(sys, 'frozen', False):
+    base_path = os.path.dirname(sys.executable)
+else:
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+# Pfade konstruieren
+python_exe = os.path.join(base_path, 'python.exe')
+main_script = os.path.join(base_path, 'lib', 'qtpatch_main.pyc') #hier die Main
+
+# Prüfen und ausführen
+if os.path.exists(python_exe) and os.path.exists(main_script):
+    subprocess.call([python_exe, main_script])
+else:
+    # Fehler in Datei schreiben statt input()
+    with open('launcher_error.txt', 'w') as f:
+        f.write(f"Python EXE not found: {python_exe}\n")
+        f.write(f"Exists: {os.path.exists(python_exe)}\n")
+        f.write(f"Main Script: {main_script}\n")
+        f.write(f"Exists: {os.path.exists(main_script)}\n")
+    
+    # Oder MessageBox für Windows:
+    import ctypes
+    ctypes.windll.user32.MessageBoxW(0, 
+        f"Dateien nicht gefunden!\nPython: {python_exe}\nScript: {main_script}", 
+        "Launcher Error", 0)
+
+
+
