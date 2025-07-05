@@ -24,8 +24,6 @@ except ImportError:
 
 
 class PatchCore:
-    """Optimized PatchCore with PyTorch-based inference and lazy initialization"""
-    
     def __init__(self, backbone='wide_resnet50_2'):
         if torch.cuda.is_available():
             self.device = 'cuda'
@@ -499,7 +497,7 @@ class PatchCore:
         self.feature_mean = checkpoint.get('feature_mean', None)
         self.feature_std = checkpoint.get('feature_std', None)
 
-        # FAISS-Index immer neu bauen, wenn verfügbar
+        # Re-build FAISS-Index if available
         if self.memory_bank is not None and FAISS_AVAILABLE:
             self.faiss_index = self.setup_faiss_index(self.memory_bank)
             print(f"✓ Memory bank loaded: {self.memory_bank.shape}")

@@ -36,6 +36,5 @@ config/config.json
 *build/
 *dist/
 *.spec
-__pycache__/
 *.py[cod]
 *$py.class
