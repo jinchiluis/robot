@@ -17,7 +17,7 @@ class QTMain_Controller(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PatchCore Vision System")
-        self.setGeometry(100, 100, 1000, 870)
+        self.setGeometry(100, 100, 1000, 700)
         
         # Setup UI
         self.setup_ui()
@@ -33,7 +33,7 @@ class QTMain_Controller(QMainWindow):
         
         # Create controllers
         self.training_controller = QTPatch_Training_Controller()
-        self.inference_controller = QTPatch_Inference_Controller(500, 0, 600, 600)
+        self.inference_controller = QTPatch_Inference_Controller(500,0,400,400)
         
         # Create scroll areas for each controller
         self.training_scroll = QScrollArea()

@@ -91,13 +91,13 @@ class QTPatch_Inference_Controller(QMainWindow):
         if camera is None:
             self.camera = QTCamera(camera_index=camera_index, area=(x, y, width, height))
             self._owns_camera = True
-            self.camera.set_fixed_display_size(600, 600)
+            self.camera.set_fixed_display_size(640, 480)
             self.store_camera = self.camera
         else:
             self.camera = camera
             self.store_camera = camera
             self._owns_camera = False
-            self.camera.set_fixed_display_size(600, 600)
+            self.camera.set_fixed_display_size(640, 480)
             
         # Initialize robot
         self.robot = QTRobot("192.168.178.98")
@@ -107,11 +107,6 @@ class QTPatch_Inference_Controller(QMainWindow):
         # Check GPU and FAISS
         import torch        
         self.device_info = "GPU (CUDA)" if torch.cuda.is_available() else "CPU"
-        try:
-            import faiss
-            self.faiss_info = "Available"
-        except ImportError:
-            self.faiss_info = "Not installed"
 
         # Setup UI
         self.setup_ui()
@@ -215,7 +210,7 @@ class QTPatch_Inference_Controller(QMainWindow):
         """Update application state."""
         self.state = new_state
         update_ui_state(self)
-        self.log(f"State changed to: {new_state.value}")
+        #self.log(f"State changed to: {new_state.value}")
 
     def load_model(self):
         """Load PatchCore model from file."""
@@ -316,7 +311,7 @@ class QTPatch_Inference_Controller(QMainWindow):
             self.ready_state_changed.emit(False, None, None)
             
     def toggle_detection(self):
-        """Start or stop motion detection."""
+        """Start or stop detection."""
         if self.start_stop_btn.text() == "Start Detection":
             # Get the current center of detected motion to store
             if self.camera is not None:
@@ -326,28 +321,28 @@ class QTPatch_Inference_Controller(QMainWindow):
                 self.last_detection_location = (center_x, center_y)
                 self.camera.set_object_detection_enabled(True)
                 self.start_stop_btn.setText("Stop Detection")
-                self.log("Motion detection started")
+                self.log("Object detection started")
             else:
                 self.log("Camera is not available. Cannot start detection.")
         else:
             self.camera.set_object_detection_enabled(False)
             self.update_state(State.IDLE)
             self.start_stop_btn.setText("Start Detection")
-            self.log("Motion detection stopped")
+            self.log("Object detection stopped")
             
     def on_object_detected(self):
-        """Handle motion detection signal from camera."""
+        """Handle detection signal from camera."""
         if self.state == State.IDLE:
-            # Store the motion detection location
+            # Store the object detection location
             camera_area = self.camera.get_area()
             center_x = camera_area[0] + camera_area[2] // 2
             center_y = camera_area[1] + camera_area[3] // 2
             self.last_detection_location = (center_x, center_y)
-            self.log(f"Motion detected at pixel: {self.last_detection_location}")
+            #self.log(f"Object detected at pixel: {self.last_detection_location}")
             
             self.update_state(State.WAITING)
             # Wait 3 seconds then capture
-            QTimer.singleShot(5000, self.capture_and_process)
+            QTimer.singleShot(3000, self.capture_and_process)
 
     def capture_and_process(self):
         """Capture frame and run PatchCore inference."""
@@ -386,7 +381,7 @@ class QTPatch_Inference_Controller(QMainWindow):
 
         try:
             # Run PatchCore inference on cropped object
-            self.log(f"Running PatchCore on cropped object ({width}x{height} pixels)...")
+            print(f"Running PatchCore on cropped object ({width}x{height} pixels)...")
             if self.patchcore_model is not None:                     
                 #-> in sterile settings -> Set min_region_size between 25 and 50
                 #-> In more chaotic settings, don't need to set this, because tiny anomalies are not detected anyway
@@ -418,7 +413,8 @@ class QTPatch_Inference_Controller(QMainWindow):
                     bytes_per_line = 3 * width
                     q_image = QImage(heatmap.data, width, height, bytes_per_line, QImage.Format_RGB888)
                     pixmap = QPixmap.fromImage(q_image)
-                    scaled_pixmap = pixmap.scaledToWidth(250, Qt.SmoothTransformation)
+                    scaled_pixmap = pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio, 
+                                                                   Qt.TransformationMode.SmoothTransformation)
                     self.heatmap_label.setPixmap(scaled_pixmap)
                 else:
                     self.heatmap_label.setText("No heatmap")
@@ -436,7 +432,7 @@ class QTPatch_Inference_Controller(QMainWindow):
                     self.anomaly_status_label.setStyleSheet("color: green; font-weight: bold;")
         
                 # Log both results
-                self.log(f"Normal score: {anomaly_score:.4f}, (threshold: {threshold:.4f}) - {status_text}")
+                #self.log(f"Normal score: {anomaly_score:.4f}, (threshold: {threshold:.4f}) - {status_text}")
                               
                 # Process based on result
                 if is_anomaly and self.last_detection_location:
@@ -451,7 +447,7 @@ class QTPatch_Inference_Controller(QMainWindow):
                         'action': self.anomaly_action
                     }
                     
-                    self.log(f"Anomaly detected at pixel ({pixel_x},{pixel_y}) -> robot ({robot_x:.2f},{robot_y:.2f})")
+                    #self.log(f"Anomaly detected at pixel ({pixel_x},{pixel_y}) -> robot ({robot_x:.2f},{robot_y:.2f})")
                     self.send_to_robot([robot_command])
                 elif not is_anomaly and self.last_detection_location:
                     # Optionally handle normal items
@@ -466,13 +462,13 @@ class QTPatch_Inference_Controller(QMainWindow):
                             'action': self.normal_action
                         }
                         
-                        self.log(f"Normal item at pixel ({pixel_x},{pixel_y}) -> robot ({robot_x:.2f},{robot_y:.2f})")
+                        #self.log(f"Normal item at pixel ({pixel_x},{pixel_y}) -> robot ({robot_x:.2f},{robot_y:.2f})")
                         self.send_to_robot([robot_command])
                     else:
-                        self.log("Normal item detected - Start detection in 2 seconds.")
+                        #self.log("Normal item detected - Start detection in 2 seconds.")
                         QTimer.singleShot(2000, self.reset_to_idle)
                 else:
-                    self.log("No valid detection location available. Start detection in 2 seconds.")
+                    #self.log("No valid detection location available. Start detection in 2 seconds.")
                     QTimer.singleShot(2000, self.reset_to_idle)
                     
         except Exception as e:
@@ -511,7 +507,7 @@ class QTPatch_Inference_Controller(QMainWindow):
             steps.append((action, robot_x, robot_y))
         
         if steps:
-            self.log(f"Sending {len(steps)} commands to robot...")
+            self.log(f"Sending {action} command to robot...")
             self.robot.process_steps_qt(steps)
         else:
             self.log("No valid robot commands to execute")
@@ -519,7 +515,7 @@ class QTPatch_Inference_Controller(QMainWindow):
         
     def on_robot_complete(self):
         """Handle robot completion."""
-        self.log("Robot finished execution. Retarting detection in 2 seconds...")
+        #self.log("Robot finished execution. Retarting detection in 2 seconds...")
         QTimer.singleShot(2000, self.reset_to_idle)
         
     def on_robot_error(self, error_msg):
@@ -536,7 +532,7 @@ class QTPatch_Inference_Controller(QMainWindow):
         
         if self.start_stop_btn.text() == "Stop Detection":
             self.camera.set_object_detection_enabled(True, reset_ref_frame)
-            self.log("Motion detection re-enabled")
+            #self.log("Motion detection re-enabled")
             
     def closeEvent(self, event):
         """Clean up on close."""

@@ -197,12 +197,12 @@ class QTPatch_Training_Controller(QMainWindow):
                 print(f"Warning: Could not read camera_index from config: {e}")
             self.camera = QTCamera(camera_index=camera_index)
             self._owns_camera = True
-            self.camera.set_fixed_display_size(600, 600)
+            self.camera.set_fixed_display_size(640, 480)
         else:
             self.camera = camera
             self._owns_camera = False
-            self.camera.set_fixed_display_size(600, 600)
-        
+            self.camera.set_fixed_display_size(640, 480)
+
         # Initialize UI
         setup_ui(self)
         self.update_status("Ready")

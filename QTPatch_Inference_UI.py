@@ -58,6 +58,12 @@ def setup_ui(controller):
     status_group = QGroupBox("Status")
     status_layout = QVBoxLayout()
     
+    # Device info (moved from settings group)
+    device = QLabel(f"Device: {controller.device_info}")
+    if controller.device_info == "CPU":
+        device.setStyleSheet("color: red;")
+    
+    status_layout.addWidget(device)
     controller.state_label = QLabel(f"State: {controller.state.value}")
     status_layout.addWidget(controller.state_label)
     
@@ -66,6 +72,8 @@ def setup_ui(controller):
     
     controller.calibration_status_label = QLabel("Calibration: Not loaded")
     status_layout.addWidget(controller.calibration_status_label)
+    
+
     
     # Separator line
     separator = QFrame()
@@ -88,9 +96,9 @@ def setup_ui(controller):
     #Heatmap display
     controller.heatmap_label = QLabel("No heatmap")
     controller.heatmap_label.setMinimumWidth(250)
-    controller.heatmap_label.setMaximumWidth(250)
+    #controller.heatmap_label.setMaximumWidth(250)
     controller.heatmap_label.setMaximumHeight(250)
-    #controller.heatmap_label.setScaledContents(True)
+    controller.heatmap_label.setScaledContents(False)
     controller.heatmap_label.setStyleSheet("border: 1px solid #ccc;")
     controller.heatmap_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     anomaly_result_layout.addWidget(controller.heatmap_label)
@@ -100,23 +108,6 @@ def setup_ui(controller):
     status_group.setLayout(status_layout)
     right_panel_layout.addWidget(status_group)
     
-    # Settings group  
-    settings_group = QGroupBox("Settings")
-    settings_layout = QVBoxLayout()
-
-    # Simple info display
-    info_layout = QHBoxLayout()
-    device = QLabel(f"Device: {controller.device_info}")
-    if device == "CPU":
-        device.setStyleSheet("color: red;")
-    info_layout.addWidget(device)
-    info_layout.addStretch()
-    info_layout.addWidget(QLabel(f"FAISS: {controller.faiss_info}"))
-
-    settings_layout.addLayout(info_layout)
-    settings_group.setLayout(settings_layout)
-    right_panel_layout.addWidget(settings_group)
-
     # Log display
     log_group = QGroupBox("Log")
     log_layout = QVBoxLayout()
