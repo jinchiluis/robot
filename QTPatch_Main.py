@@ -59,9 +59,9 @@ class QTMain_Controller(QMainWindow):
         self.create_menu_bar()
         
         # Create status bar
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready")
+        #self.status_bar = QStatusBar()
+        #self.setStatusBar(self.status_bar)
+        #self.status_bar.showMessage("Ready")
         
     def create_menu_bar(self):
         """Create the menu bar with navigation options."""
@@ -94,14 +94,14 @@ class QTMain_Controller(QMainWindow):
     def switch_to_training(self):
         """Switch to training page."""
         self.stacked_widget.setCurrentWidget(self.training_scroll)
-        self.status_bar.showMessage("Training Mode - Capture normal samples")
+        #self.status_bar.showMessage("Training Mode - Capture normal samples")
         self.setWindowTitle("PatchCore Vision System - Training")
         self.view_switched.emit("Training")
         
     def switch_to_inference(self):
         """Switch to inference page."""
         self.stacked_widget.setCurrentWidget(self.inference_scroll)
-        self.status_bar.showMessage("Inference Mode - Detect anomalies")
+        #self.status_bar.showMessage("Inference Mode - Detect anomalies")
         self.setWindowTitle("PatchCore Vision System - Inference")
         self.view_switched.emit("PatchCore_Inference")
         

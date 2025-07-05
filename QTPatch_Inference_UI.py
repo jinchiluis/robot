@@ -100,28 +100,23 @@ def setup_ui(controller):
     status_group.setLayout(status_layout)
     right_panel_layout.addWidget(status_group)
     
-    # Settings group
+    # Settings group  
     settings_group = QGroupBox("Settings")
     settings_layout = QVBoxLayout()
-    
-    # Robot actions
-    action_layout = QHBoxLayout()
-    action_layout.addWidget(QLabel("Normal Action:"))
-    controller.normal_action_label = QLabel(controller.normal_action)
-    action_layout.addWidget(controller.normal_action_label)
-    action_layout.addStretch()
-    
-    action_layout.addWidget(QLabel("Anomaly Action:"))
-    controller.anomaly_action_label = QLabel(controller.anomaly_action)
-    controller.anomaly_action_label.setStyleSheet("color: red;")
-    action_layout.addWidget(controller.anomaly_action_label)
-    action_layout.addStretch()
-    
-    settings_layout.addLayout(action_layout)
-    
+
+    # Simple info display
+    info_layout = QHBoxLayout()
+    device = QLabel(f"Device: {controller.device_info}")
+    if device == "CPU":
+        device.setStyleSheet("color: red;")
+    info_layout.addWidget(device)
+    info_layout.addStretch()
+    info_layout.addWidget(QLabel(f"FAISS: {controller.faiss_info}"))
+
+    settings_layout.addLayout(info_layout)
     settings_group.setLayout(settings_layout)
     right_panel_layout.addWidget(settings_group)
-    
+
     # Log display
     log_group = QGroupBox("Log")
     log_layout = QVBoxLayout()

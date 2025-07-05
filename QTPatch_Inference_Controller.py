@@ -104,9 +104,18 @@ class QTPatch_Inference_Controller(QMainWindow):
         self.robot.robot_complete.connect(self.on_robot_complete)
         self.robot.robot_error.connect(self.on_robot_error)
         
+        # Check GPU and FAISS
+        import torch        
+        self.device_info = "GPU (CUDA)" if torch.cuda.is_available() else "CPU"
+        try:
+            import faiss
+            self.faiss_info = "Available"
+        except ImportError:
+            self.faiss_info = "Not installed"
+
         # Setup UI
         self.setup_ui()
-
+        
         # Load calibration data if provided
         if calibration_data:
             success, message = self.coordinate_transformer.import_calibration(calibration_data)
@@ -120,7 +129,6 @@ class QTPatch_Inference_Controller(QMainWindow):
         #Auto-load model and calibration if available
         QTimer.singleShot(0, self.auto_load_files)
        
-        # Remove pygame sound initialization (no longer needed)
         self.sound_enabled = True  # For winsound beep
             
     def auto_load_files(self):

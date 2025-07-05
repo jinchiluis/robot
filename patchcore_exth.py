@@ -145,7 +145,7 @@ class PatchCore:
     
         return features
     
-    def adaptive_sampling(self, features, sampling_ratio=0.01):
+    def adaptive_sampling(self, features, sampling_ratio=0.01, callback=None):
         """Optimized K-center greedy sampling with GPU acceleration"""
         n_samples = int(len(features) * sampling_ratio)
         if n_samples >= len(features):
@@ -201,6 +201,10 @@ class PatchCore:
             masked_distances[selected_mask] = -1
             next_idx = torch.argmax(masked_distances).item()
             selected_indices.append(next_idx)
+            
+            # Update Progress to caller
+            if callback and i % 100 == 0:  # Call every 100 iterations
+                callback(i, n_samples - 1)
         
         return np.array(selected_indices)
     
@@ -222,7 +226,7 @@ class PatchCore:
         
         return index
     
-    def fit(self, train_dir, sample_ratio=0.01, threshold_percentile=99, val_dir=None):
+    def fit(self, train_dir, sample_ratio=0.01, threshold_percentile=99, val_dir=None, callback=None):
         """Optimized training with faster data loading and processing"""
         print(f"Training Optimized PatchCore on: {train_dir}")
         start_time = time.time()
@@ -271,8 +275,8 @@ class PatchCore:
                 n_samples = int(len(all_features) * sample_ratio)
                 selected_indices = np.random.choice(len(all_features), n_samples, replace=False)
         else:
-            selected_indices = self.adaptive_sampling(all_features, sample_ratio)
-        
+            selected_indices = self.adaptive_sampling(all_features, sample_ratio, callback=callback)
+
         self.memory_bank = all_features[selected_indices]
         print(f"Memory bank size: {self.memory_bank.shape}")
 

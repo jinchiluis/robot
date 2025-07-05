@@ -21,6 +21,7 @@ class TrainingThread(QThread):
     finished = Signal(bool)
     error = Signal(str)
     status = Signal(str)
+    progress = Signal(int)  # New signal for progress percentage
     
     def __init__(self, train_dir, val_dir, sample_ratio, threshold_percentile, backbone):
         super().__init__()
@@ -30,18 +31,26 @@ class TrainingThread(QThread):
         self.threshold_percentile = threshold_percentile
         self.backbone = backbone
         self.model = None
+        self.should_stop = False 
         
     def run(self):
         try:
             self.status.emit("Initializing PatchCore model...")
             self.model = PatchCore(backbone=self.backbone)
-            
+
+            def progress_callback(current, total):
+                percent = int((current / total) * 100)
+                self.progress.emit(percent)
+                if self.should_stop:
+                    raise Exception("Training cancelled by user")
+
             self.status.emit("Training on normal samples...")
             self.model.fit(
                 train_dir=self.train_dir,
                 val_dir=self.val_dir,
                 sample_ratio=self.sample_ratio,
-                threshold_percentile=self.threshold_percentile
+                threshold_percentile=self.threshold_percentile,
+                callback=progress_callback  # Pass the callback
             )
             
             self.finished.emit(True)
@@ -430,13 +439,18 @@ class QTPatch_Training_Controller(QMainWindow):
             shutil.copy2(src_path, dst_path)
         
         # Show progress dialog
-        progress = QProgressDialog("Training PatchCore model...", None, 0, 0, self)
+        progress = QProgressDialog("Training PatchCore model...", None, 0, 100, self)
         progress.setWindowModality(Qt.WindowModal)
+        progress.setValue(0)
         progress.show()
         
         # Update progress text
-        def update_progress(text):
+        def update_progress_text(text):
             progress.setLabelText(text)
+            QApplication.processEvents()
+        
+        def update_progress_value(val):
+            progress.setValue(val)
             QApplication.processEvents()
         
         # Train in thread
@@ -447,8 +461,9 @@ class QTPatch_Training_Controller(QMainWindow):
             self.threshold_percentile,
             self.backbone
         )
-        
-        self.training_thread.status.connect(update_progress)
+        progress.canceled.connect(lambda: setattr(self.training_thread, 'should_stop', True))
+        self.training_thread.status.connect(update_progress_text)
+        self.training_thread.progress.connect(update_progress_value)
         self.training_thread.finished.connect(lambda s: self.on_training_finished(s, progress))
         self.training_thread.error.connect(lambda e: self.on_training_error(e, progress))
         self.training_thread.start()
@@ -477,8 +492,18 @@ class QTPatch_Training_Controller(QMainWindow):
     def on_training_error(self, error, progress):
         """Handle training error."""
         progress.close()
-        QMessageBox.critical(self, "Training Error", f"Training failed: {error}")
-        self.update_status("Training failed")
+        # Clean up the thread and model
+        if hasattr(self, 'training_thread'):
+            self.training_thread.model = None  # Release the PatchCore instance
+            self.training_thread.deleteLater()  # Schedule thread for deletion
+            self.training_thread = None
+    
+        if "cancelled" in error.lower():
+            QMessageBox.information(self, "Training Cancelled", "Training was cancelled by user")
+        else:
+            QMessageBox.critical(self, "Training Error", f"Training failed: {error}")
+    
+        self.update_status("Training cancelled" if "cancelled" in error.lower() else "Training failed")
         
     def save_model(self):
         """Save the trained model."""
