@@ -122,7 +122,7 @@ class QTCamera(QWidget):
         
     def init_camera(self):
         """Initialize the camera capture."""
-        self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+        self.cap = cv2.VideoCapture(self.camera_index)#, cv2.CAP_DSHOW)
         if not self.cap.isOpened():
             raise RuntimeError(f"Cannot open camera {self.camera_index}")
 
@@ -390,59 +390,59 @@ class QTCamera(QWidget):
             return width, height
 
 
-class TestWindow(QMainWindow):
-    """Test application window."""
+# class TestWindow(QMainWindow):
+#     """Test application window."""
     
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("QTCamera Static Object Detection Test")
+#     def __init__(self):
+#         super().__init__()
+#         self.setWindowTitle("QTCamera Static Object Detection Test")
         
-        # Central widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+#         # Central widget
+#         central_widget = QWidget()
+#         self.setCentralWidget(central_widget)
         
-        # Layout
-        layout = QVBoxLayout()
+#         # Layout
+#         layout = QVBoxLayout()
         
-        # Camera widget with area selection
-        # Example: Only show a 600x600 area starting at position (500, 5)
-        self.camera = QTCamera(camera_index=0, area=(500, 5, 600, 600))
-        self.camera.object_detected.connect(self.on_object_detected)
+#         # Camera widget with area selection
+#         # Example: Only show a 600x600 area starting at position (500, 5)
+#         self.camera = QTCamera(camera_index=0, area=(500, 5, 600, 600))
+#         self.camera.object_detected.connect(self.on_object_detected)
         
-        # Set fixed display size for consistent appearance
-        self.camera.set_fixed_display_size(600, 600)
+#         # Set fixed display size for consistent appearance
+#         self.camera.set_fixed_display_size(600, 600)
         
-        layout.addWidget(self.camera)
+#         layout.addWidget(self.camera)
         
-        # Snapshot button
-        snapshot_btn = QPushButton("Capture Snapshot")
-        snapshot_btn.clicked.connect(self.capture_snapshot)
-        layout.addWidget(snapshot_btn)
+#         # Snapshot button
+#         snapshot_btn = QPushButton("Capture Snapshot")
+#         snapshot_btn.clicked.connect(self.capture_snapshot)
+#         layout.addWidget(snapshot_btn)
         
-        # Status label
-        self.status_label = QLabel("Ready - Press 'Enable Detection' to start")
-        layout.addWidget(self.status_label)
+#         # Status label
+#         self.status_label = QLabel("Ready - Press 'Enable Detection' to start")
+#         layout.addWidget(self.status_label)
         
-        central_widget.setLayout(layout)
+#         central_widget.setLayout(layout)
         
-    def on_object_detected(self, regions):
-        """Handle object detection signal."""
-        self.status_label.setText(f"Objects detected: {len(regions)} regions")
+#     def on_object_detected(self, regions):
+#         """Handle object detection signal."""
+#         self.status_label.setText(f"Objects detected: {len(regions)} regions")
     
-    def capture_snapshot(self):
-        """Capture a snapshot."""
-        filename = self.camera.capture_snapshot()
-        if filename:
-            self.status_label.setText(f"Snapshot saved: {filename}")
+#     def capture_snapshot(self):
+#         """Capture a snapshot."""
+#         filename = self.camera.capture_snapshot()
+#         if filename:
+#             self.status_label.setText(f"Snapshot saved: {filename}")
 
 
-def main():
-    """Main function to run the test app."""
-    app = QApplication(sys.argv)
-    window = TestWindow()
-    window.show()
-    sys.exit(app.exec())
+# def main():
+#     """Main function to run the test app."""
+#     app = QApplication(sys.argv)
+#     window = TestWindow()
+#     window.show()
+#     sys.exit(app.exec())
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
