@@ -1,14 +1,12 @@
-import sys
 import cv2
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QApplication, QMainWindow, QStackedWidget, 
-                               QStatusBar, QScrollArea)
+                                QStatusBar, QScrollArea)
 
 from QTPatch_Training_Controller import QTPatch_Training_Controller
 from QTPatch_Inference_Controller import QTPatch_Inference_Controller
 from QTCalibration_Controller import QTCalibration_Controller
-
 
 class QTMain_Controller(QMainWindow):
     """Simple main controller for PatchCore training and inference."""
@@ -146,9 +144,34 @@ class QTMain_Controller(QMainWindow):
 
 def main():
     """Main function to run the application."""
+    import sys
+    from PySide6.QtWidgets import QApplication, QSplashScreen
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtCore import Qt
+
     app = QApplication(sys.argv)
+    
+    # Create splash screen
+    splash_pix = QPixmap(300, 30)  # Or load from file
+    splash_pix.fill(Qt.darkGray)
+    
+    splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+    splash.setMask(splash_pix.mask())
+    
+    # Show splash
+    splash.show()
+    splash.showMessage("Loading PatchCore Vision System...", 
+                      Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+    
+    app.processEvents()  # Process paint events
+
+    # Create main window
     window = QTMain_Controller()
+    
+    # Close splash and show main window
+    splash.finish(window)
     window.show()
+    
     sys.exit(app.exec())
 
 

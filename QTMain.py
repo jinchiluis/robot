@@ -24,7 +24,7 @@ class QTMain_Controller(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("QT Robot Vision System")
-        self.setGeometry(100, 100, 1100, 900)
+        self.setGeometry(100, 100, 1000, 720)
         
         # Shared resources
         self.camera = QTCamera(camera_index=0)
@@ -80,9 +80,9 @@ class QTMain_Controller(QMainWindow):
         self.create_menu_bar()
         
         # Create status bar
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready")
+        # self.status_bar = QStatusBar()
+        # self.setStatusBar(self.status_bar)
+        # self.status_bar.showMessage("Ready")
         
         # Connect signals
         # self.calibration_controller.calibration_saved.connect(self.on_calibration_saved)
@@ -177,7 +177,7 @@ class QTMain_Controller(QMainWindow):
                         self.width_spinbox.setValue(area['width'])
                         self.height_spinbox.setValue(area['height'])
                         
-                    self.status_bar.showMessage(f"Loaded calibration: {Path(config['calibration']).name}", 3000)
+                    #self.status_bar.showMessage(f"Loaded calibration: {Path(config['calibration']).name}", 3000)
                     
             except Exception as e:
                 QMessageBox.warning(self, "Warning", f"Failed to load calibration: {str(e)}")
@@ -195,7 +195,7 @@ class QTMain_Controller(QMainWindow):
                 self.inference_controller.model_status_label.setText(f"Model: {Path(config['model']).name}")
                 self.inference_controller.log(f"Model loaded from configuration: {config['model']}")
                 self.inference_controller.check_ready()
-                self.status_bar.showMessage(f"Loaded model: {Path(config['model']).name}", 3000)
+                #self.status_bar.showMessage(f"Loaded model: {Path(config['model']).name}", 3000)
             except Exception as e:
                 QMessageBox.warning(self, "Warning", f"Failed to load model: {str(e)}")
                 
@@ -203,7 +203,7 @@ class QTMain_Controller(QMainWindow):
         if config.get('robot_type'):
             self.robot_type = config['robot_type']
             
-        self.status_bar.showMessage(f"Configuration loaded: {config['name']}", 5000)
+        #self.status_bar.showMessage(f"Configuration loaded: {config['name']}", 5000)
         
     def save_configuration(self):
         """Save current configuration."""
@@ -233,7 +233,7 @@ class QTMain_Controller(QMainWindow):
     def switch_to_calibration(self):
         """Switch to calibration page."""
         self.stacked_widget.setCurrentWidget(self.calibration_controller)
-        self.status_bar.showMessage("Calibration Mode")
+        # self.status_bar.showMessage("Calibration Mode")
 
         # Disable load configuration in calibration mode
         self.load_config_action.setEnabled(False)
@@ -299,7 +299,7 @@ class QTMain_Controller(QMainWindow):
         
         self.stacked_widget.setCurrentWidget(self.inference_scroll_area)
         self.load_config_action.setEnabled(True)
-        self.status_bar.showMessage("Inference Mode")
+        #self.status_bar.showMessage("Inference Mode")
 
         self.view_switched.emit("Inference")
 
@@ -317,7 +317,7 @@ class QTMain_Controller(QMainWindow):
                 calibration_data=None
             )
             # Connect to camera area change signal
-            self.training_controller.camera_area_changed.connect(self.on_camera_area_changed)
+            #self.training_controller.camera_area_changed.connect(self.on_camera_area_changed)
             
             # Create scroll area and add the training controller to it
             self.training_scroll_area = QScrollArea()
@@ -351,7 +351,7 @@ class QTMain_Controller(QMainWindow):
         
         self.stacked_widget.setCurrentWidget(self.training_scroll_area)
         self.load_config_action.setEnabled(False)
-        self.status_bar.showMessage("Training Mode")
+        #self.status_bar.showMessage("Training Mode")
 
         self.view_switched.emit("Training")
            
@@ -374,10 +374,34 @@ class QTMain_Controller(QMainWindow):
         event.accept()
 
 def main():
-    """Main function to run the application."""
+    #import sys
+    from PySide6.QtWidgets import QApplication, QSplashScreen
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtCore import Qt
+
     app = QApplication(sys.argv)
+    
+    # Create splash screen
+    splash_pix = QPixmap(300, 30)  # Or load from file
+    splash_pix.fill(Qt.darkGray)
+    
+    splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+    splash.setMask(splash_pix.mask())
+    
+    # Show splash
+    splash.show()
+    splash.showMessage("Loading DinoV2 Vision System...", 
+                      Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+    
+    app.processEvents()  # Process paint events
+    
+    # Create main window
     window = QTMain_Controller()
+    
+    # Close splash and show main window
+    splash.finish(window)
     window.show()
+    
     sys.exit(app.exec())
 
 

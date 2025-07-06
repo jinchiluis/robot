@@ -1,0 +1,9 @@
+Prequisite:
+NEVER use openCV, use opencv-python-headless instead
+
+-------
+
+NUITKA commando
+
+python -m nuitka --standalone --enable-plugin=pyside6 --module-parameter=torch-disable-jit=yes --windows-console-mode=disable QTPatch_Main.py
+
