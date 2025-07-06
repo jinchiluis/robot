@@ -40,8 +40,8 @@ class QTInference_Controller(QMainWindow):
     # Add this signal
     camera_area_changed = Signal(int, int, int, int)  # x, y, width, height
     ready_state_changed = Signal(bool, str, str)  # is_ready, model_path, calibration_path
-    
-    def __init__(self,  x, y,width,height, camera=None, calibration_data=None,):
+
+    def __init__(self,  x=0, y=0,width=1920,height=1080, camera=None, calibration_data=None,):
         """
         Initialize inference controller.
         
@@ -67,24 +67,22 @@ class QTInference_Controller(QMainWindow):
         
         # Handle camera - create if not provided (for standalone use)
         if camera is None:
-            self.camera = QTCamera(camera_index=0, area=(500, 0, 600, 600))
+            self.camera = QTCamera(camera_index=0, area=(0, 0, 1920, 1080))
             self._owns_camera = True
-            self.camera.set_fixed_display_size(400, 400) 
+            self.camera.set_fixed_display_size(640, 480) 
         elif x is not None:
             self.camera = QTCamera(camera_index=0, area=(x, y, width, height))
             #self.camera = QTCamera(camera_index=0, area=(500, 0, 600, 600))
             self._owns_camera = True
-            self.camera.set_fixed_display_size(600, 600)  
+            self.camera.set_fixed_display_size(640, 480)  
             self.store_camera = self.camera          
         else: ### should not use "shared" cameras (rather receive the feed -> too much for this use case)
             self.camera = camera
             self.store_camera = camera #keep a passive camera instance
             self._owns_camera = False
-            # Get the effective resolution and set display size to 60% of it
             width, height = self.camera.get_effective_resolution()
-            #self.camera.set_fixed_display_size(int(0.6 * width), int(0.6 * height))
-            self.camera.set_fixed_display_size(600, 600)    
-            
+            self.camera.set_fixed_display_size(640, 480)
+
         # Initialize robot
         self.robot = QTRobot("192.168.178.98")
         self.robot.robot_complete.connect(self.on_robot_complete)

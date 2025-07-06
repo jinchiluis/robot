@@ -148,9 +148,10 @@ class QTPatch_Inference_Controller(QMainWindow):
                         self.anomaly_threshold = self.patchcore_model.global_threshold
                         self.threshold_label.setText(f"Threshold: {self.anomaly_threshold:.4f}")
                     
-                    self.log(f"Auto-loaded PatchCore model: {model_file}")
+                    #self.log(f"Auto-loaded PatchCore model: {model_file}")
+                    self.update_status(f"Auto-loaded PatchCore model: {model_file}")
                 except Exception as e:
-                    self.log(f"Failed to auto-load model: {str(e)}")
+                    self.update_status(f"Failed to auto-load model: {str(e)}")
         
         # Auto-load calibration (same as DINO version)
         if not self.calibration_loaded:
@@ -189,6 +190,10 @@ class QTPatch_Inference_Controller(QMainWindow):
 
         self.check_ready()
 
+    def update_status(self, message):
+        """Update status bar."""
+        self.status_bar.showMessage(message)
+        
     def setup_ui(self):
         """Setup the user interface."""
         setup_ui(self)

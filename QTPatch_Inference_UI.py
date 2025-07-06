@@ -62,15 +62,19 @@ def setup_ui(controller):
     device = QLabel(f"Device: {controller.device_info}")
     if controller.device_info == "CPU":
         device.setStyleSheet("color: red;")
-    
     status_layout.addWidget(device)
+    
     controller.state_label = QLabel(f"State: {controller.state.value}")
     status_layout.addWidget(controller.state_label)
     
     controller.model_status_label = QLabel("Model: Not loaded")
+    if controller.model_status_label == "Model: Not loaded":
+        controller.model_status_label.setStyleSheet("color: red;")
     status_layout.addWidget(controller.model_status_label)
     
     controller.calibration_status_label = QLabel("Calibration: Not loaded")
+    if controller.calibration_status_label == "Calibration: Not loaded":
+        controller.calibration_status_label.setStyleSheet("color: red;")
     status_layout.addWidget(controller.calibration_status_label)
     
 

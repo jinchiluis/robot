@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, Signal, QPoint
 from PySide6.QtGui import QPainter, QBrush, QPen, QColor, QPixmap, QImage
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                               QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QLabel, QLineEdit, QListWidget, QSpinBox,
                                QMessageBox, QInputDialog, QGroupBox, QFrame, QGridLayout, QStatusBar)
 
 
@@ -140,13 +140,50 @@ def setup_ui(controller):
     
     # Image label
     controller.image_label = ClickableLabel()
-    controller.image_label.setFixedSize(600, 600)
+    controller.image_label.setFixedSize(640, 480)
     # Remove setScaledContents - we'll handle scaling manually
     controller.image_label.setStyleSheet("border: 2px solid gray;")
     controller.image_label.clicked.connect(controller.on_image_clicked)
     controller.image_label.mouse_moved.connect(controller.on_mouse_moved)
     left_layout.addWidget(controller.image_label)
+
+    camera_controls_layout = QHBoxLayout()
     
+    # X coordinate
+    camera_controls_layout.addWidget(QLabel("X-Value:"))
+    controller.x_spinbox = QSpinBox()
+    controller.x_spinbox.setRange(0, 9999)
+    controller.x_spinbox.setValue(controller.camera_area_x)
+    camera_controls_layout.addWidget(controller.x_spinbox)
+    
+    # Y coordinate
+    camera_controls_layout.addWidget(QLabel("Y-Value:"))
+    controller.y_spinbox = QSpinBox()
+    controller.y_spinbox.setRange(0, 9999)
+    controller.y_spinbox.setValue(controller.camera_area_y)
+    camera_controls_layout.addWidget(controller.y_spinbox)
+    
+    # Width
+    camera_controls_layout.addWidget(QLabel("Width:"))
+    controller.width_spinbox = QSpinBox()
+    controller.width_spinbox.setRange(100, 9999)
+    controller.width_spinbox.setValue(controller.camera_area_width)
+    camera_controls_layout.addWidget(controller.width_spinbox)
+    
+    # Height
+    camera_controls_layout.addWidget(QLabel("Height:"))
+    controller.height_spinbox = QSpinBox()
+    controller.height_spinbox.setRange(100, 9999)
+    controller.height_spinbox.setValue(controller.camera_area_height)
+    camera_controls_layout.addWidget(controller.height_spinbox)
+    
+    # Set Camera Area button
+    controller.set_area_button = QPushButton("Set Area")
+    controller.set_area_button.clicked.connect(controller.update_camera_area)
+    camera_controls_layout.addWidget(controller.set_area_button)
+    
+    left_layout.addLayout(camera_controls_layout)
+
     # Control buttons
     button_layout = QHBoxLayout()
     controller.freeze_btn = QPushButton("Start Calibration")

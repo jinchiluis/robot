@@ -194,12 +194,12 @@ class QTTraining_Controller(QMainWindow):
         if camera is None:
             self.camera = QTCamera(camera_index=0)
             self._owns_camera = True
-            self.camera.set_fixed_display_size(600, 600)
+            self.camera.set_fixed_display_size(640, 480)
         else:
             self.camera = camera
             self._owns_camera = False
-            # Keep the display size as set by main app or use 600x600
-            self.camera.set_fixed_display_size(600, 600)
+            # Keep the display size as set by main app or use 640x480
+            self.camera.set_fixed_display_size(640, 480)
         
         setup_ui(self)
         self.update_status("Ready")

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QStackedWidget,
 
 from QTPatch_Training_Controller import QTPatch_Training_Controller
 from QTPatch_Inference_Controller import QTPatch_Inference_Controller
+from QTCalibration_Controller import QTCalibration_Controller
 
 
 class QTMain_Controller(QMainWindow):
@@ -34,6 +35,7 @@ class QTMain_Controller(QMainWindow):
         # Create controllers
         self.training_controller = QTPatch_Training_Controller()
         self.inference_controller = QTPatch_Inference_Controller(0,0,1920,1080)
+        self.calibration_controller = QTCalibration_Controller()
         
         # Create scroll areas for each controller
         self.training_scroll = QScrollArea()
@@ -48,9 +50,19 @@ class QTMain_Controller(QMainWindow):
         self.inference_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.inference_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
+        self.calibration_scroll = QScrollArea()
+        self.calibration_scroll.setWidget(self.calibration_controller)
+        self.calibration_scroll.setWidgetResizable(True)
+        self.calibration_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.calibration_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
         # Add to stacked widget
         self.stacked_widget.addWidget(self.training_scroll)
         self.stacked_widget.addWidget(self.inference_scroll)
+        self.stacked_widget.addWidget(self.calibration_scroll)
+        
+        # Connect calibration saved signal if needed
+        #self.calibration_controller.calibration_saved.connect(self.on_calibration_saved)
         
         # Connect view_switched signal to inference controller
         #self.view_switched.connect(self.inference_controller.on_view_switched)
@@ -91,9 +103,16 @@ class QTMain_Controller(QMainWindow):
         inference_action.triggered.connect(self.switch_to_inference)
         nav_menu.addAction(inference_action)
         
+        # Calibration action
+        calibration_action = QAction("Calibration", self)
+        calibration_action.setShortcut("Ctrl+3")
+        calibration_action.triggered.connect(self.switch_to_calibration)
+        nav_menu.addAction(calibration_action)
+        
     def switch_to_training(self):
         """Switch to training page."""
         self.stacked_widget.setCurrentWidget(self.training_scroll)
+        self.training_controller.auto_load_calibration() #in case we do view switch from calibration     
         #self.status_bar.showMessage("Training Mode - Capture normal samples")
         self.setWindowTitle("PatchCore Vision System - Training")
         self.view_switched.emit("Training")
@@ -101,9 +120,23 @@ class QTMain_Controller(QMainWindow):
     def switch_to_inference(self):
         """Switch to inference page."""
         self.stacked_widget.setCurrentWidget(self.inference_scroll)
+        self.inference_controller.auto_load_files() #in case we do view switch from training
         #self.status_bar.showMessage("Inference Mode - Detect anomalies")
         self.setWindowTitle("PatchCore Vision System - Inference")
         self.view_switched.emit("PatchCore_Inference")
+        
+    def switch_to_calibration(self):
+        """Switch to calibration page."""
+        self.stacked_widget.setCurrentWidget(self.calibration_scroll)
+        #self.status_bar.showMessage("Calibration Mode - Setup coordinate transformation")
+        self.setWindowTitle("PatchCore Vision System - Calibration")
+        self.view_switched.emit("Calibration")
+        
+    # def on_calibration_saved(self, calibration_data):
+    #     """Handle calibration saved signal."""
+    #     print(f"Calibration saved: {calibration_data.get('name', 'Unknown')}")
+    #     # You could pass this to the inference controller if needed
+    #     # self.inference_controller.load_calibration(calibration_data)
         
     def closeEvent(self, event):
         """Clean up on close."""

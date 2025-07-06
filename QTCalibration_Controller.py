@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QWidget, QMainWindow, QPushButton, QLabel, QLineEdit, QListWidget,
+from PySide6.QtWidgets import (QMainWindow, QPushButton, QLabel, QLineEdit, QListWidget,
                                QMessageBox, QInputDialog, QStatusBar)
 from coordinate_transformer import CoordinateTransformer
 from QTRobot import QTRobot
@@ -32,7 +32,7 @@ class QTCalibration_Controller(QMainWindow):
     status_bar: QStatusBar
 
     # Signal for when calibration is saved
-    calibration_saved = Signal(dict)
+    #calibration_saved = Signal(dict)
     
     # States
     STATE_LIVE = "LIVE"
@@ -61,8 +61,22 @@ class QTCalibration_Controller(QMainWindow):
             self.camera = camera_widget
             self._owns_camera = False
             width, height = self.camera.get_effective_resolution()
-            self.camera.set_fixed_display_size(int(0.6 * width), int(0.6 * height))
+            self.camera.set_fixed_display_size(640, 480)
             
+        # Initialize camera area values
+        self.camera_area_x = 0
+        self.camera_area_y = 0
+        self.camera_area_width = 640
+        self.camera_area_height = 480
+        
+        # Get current camera area if set
+        current_area = self.camera.get_area()
+        if current_area:
+            self.camera_area_x = current_area[0]
+            self.camera_area_y = current_area[1]
+            self.camera_area_width = current_area[2]
+            self.camera_area_height = current_area[3]        
+
         self.transformer = CoordinateTransformer()
         self.state = self.STATE_LIVE
         self.frozen_frame = None
@@ -93,7 +107,25 @@ class QTCalibration_Controller(QMainWindow):
         
         self.setup_ui()
         self.update_ui_state()
+
+    def update_camera_area(self):
+        """Update the camera area based on spinbox values."""
+        x = self.x_spinbox.value()
+        y = self.y_spinbox.value()
+        width = self.width_spinbox.value()
+        height = self.height_spinbox.value()
         
+        new_area = (x, y, width, height)
+        self.camera.set_area(new_area)
+        
+        # Store for later use
+        self.camera_area_x = x
+        self.camera_area_y = y
+        self.camera_area_width = width
+        self.camera_area_height = height
+        
+        self.status_bar.showMessage(f"Camera area updated to: {new_area}", 3000)
+
     def setup_ui(self):
         """Setup the user interface."""
         setup_ui(self)
@@ -385,10 +417,10 @@ class QTCalibration_Controller(QMainWindow):
                 camera_area = (0, 0, width, height)
 
             calibration_data['camera_area'] = {
-                'x': camera_area[0],
-                'y': camera_area[1],
-                'width': camera_area[2],
-                'height': camera_area[3]
+                'x': self.camera_area_x,
+                'y': self.camera_area_y,
+                'width': self.camera_area_width,
+                'height': self.camera_area_height
             }
 
             with open(filepath, 'w') as f:
