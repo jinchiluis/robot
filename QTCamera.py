@@ -1,4 +1,6 @@
 import sys
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Add this before importing cv2
 import cv2
 import numpy as np
 from datetime import datetime
@@ -122,7 +124,7 @@ class QTCamera(QWidget):
         
     def init_camera(self):
         """Initialize the camera capture."""
-        self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_MSMF)
+        self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
         if not self.cap.isOpened():
             raise RuntimeError(f"Cannot open camera {self.camera_index}")
 
