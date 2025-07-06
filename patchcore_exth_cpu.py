@@ -30,7 +30,6 @@ except ImportError:
     print("⚠️ FAISS not available - always using scipy for nearest neighbor search")
 from pathlib import Path
 from tqdm import tqdm
-from bgmasker import BackgroundMasker
 
 
 class SimplePatchCore:
@@ -61,7 +60,6 @@ class SimplePatchCore:
         #masker
         self.mask_method = mask_method
         self.mask_params = mask_params
-        self.masker = BackgroundMasker() if mask_method else None
         
         # FIX 2: Disable gradient computation and set to eval mode permanently
         for param in self.model.parameters():
@@ -438,12 +436,6 @@ class SimplePatchCore:
        original_size = image.size  # (width, height)
        
        # Apply background masking if configured
-       if self.masker and self.mask_method:
-           if self.mask_method == 'center_crop':
-               image = self.masker.center_crop_percent(image, **self.mask_params)
-           elif self.mask_method == 'edge_crop':
-               image = self.masker.edge_based_crop(image, **self.mask_params)
-       
        image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
        
        # Extract features
@@ -535,12 +527,6 @@ class SimplePatchCore:
         image = Image.open(image_path).convert('RGB')
         
         # Apply background masking if configured
-        if self.masker and self.mask_method:
-            if self.mask_method == 'center_crop':
-                image = self.masker.center_crop_percent(image, **self.mask_params)
-            elif self.mask_method == 'edge_crop':
-                image = self.masker.edge_based_crop(image, **self.mask_params)
-        
         image_tensor = self.transform_test(image).unsqueeze(0).to(self.device)
         
         # Extract features
@@ -636,9 +622,6 @@ class SimplePatchCore:
         self.mask_method = checkpoint.get('mask_method', None)
         self.mask_params = checkpoint.get('mask_params', {})
         
-        # Recreate masker if needed
-        self.masker = BackgroundMasker() if self.mask_method else None
-        
         # Smart FAISS switching at load time
         MIN_MEMORY_BANK_SIZE = 10000  #Only use FAISS for large data sets, else scipy is faster
 
@@ -731,7 +714,6 @@ class SimpleImageDataset(Dataset):
         self.transform = transform
         self.mask_method = mask_method
         self.mask_params = mask_params or {}
-        self.masker = BackgroundMasker() if mask_method else None
         
         # Collect all image files
         all_images = []
@@ -753,13 +735,6 @@ class SimpleImageDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.images[idx]
         image = Image.open(img_path).convert('RGB')
-        
-        # Apply background masking if configured
-        if self.masker and self.mask_method:
-            if self.mask_method == 'center_crop':
-                image = self.masker.center_crop_percent(image, **self.mask_params)
-            elif self.mask_method == 'edge_crop':
-                image = self.masker.edge_based_crop(image, **self.mask_params)
         
         if self.transform:
             image = self.transform(image)
