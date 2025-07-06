@@ -122,13 +122,19 @@ class QTCamera(QWidget):
         
     def init_camera(self):
         """Initialize the camera capture."""
-        self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_ANY)
+        self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
         if not self.cap.isOpened():
             raise RuntimeError(f"Cannot open camera {self.camera_index}")
 
-        # Set camera properties
+        # THE MAGIC SEQUENCE - DO NOT CHANGE ORDER!
+        self.cap.set(cv2.CAP_PROP_FPS, 30.0)
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('m','j','p','g'))
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M','J','P','G'))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        
+        # Add buffer size reduction
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         # Setup timer for frame updates
         self.timer = QTimer()
