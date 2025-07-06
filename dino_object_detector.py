@@ -1,3 +1,7 @@
+import os
+# Fix for OpenMP conflict on Windows
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+#os.environ["OMP_NUM_THREADS"] = "1"
 import torch
 import torch.nn.functional as F
 import numpy as np
