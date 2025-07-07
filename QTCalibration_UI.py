@@ -176,7 +176,12 @@ def setup_ui(controller):
     controller.height_spinbox.setRange(100, 9999)
     controller.height_spinbox.setValue(controller.camera_area_height)
     camera_controls_layout.addWidget(controller.height_spinbox)
-    
+
+    controller.x_spinbox.valueChanged.connect(controller.update_camera_area)
+    controller.y_spinbox.valueChanged.connect(controller.update_camera_area)
+    controller.width_spinbox.valueChanged.connect(controller.update_camera_area)
+    controller.height_spinbox.valueChanged.connect(controller.update_camera_area)
+
     # Set Camera Area button
     controller.set_area_button = QPushButton("Set Area")
     controller.set_area_button.clicked.connect(controller.update_camera_area)
