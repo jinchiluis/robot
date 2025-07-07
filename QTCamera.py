@@ -124,7 +124,9 @@ class QTCamera(QWidget):
         """Initialize the camera capture."""
         self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
         if not self.cap.isOpened():
-            raise RuntimeError(f"Cannot open camera {self.camera_index}")
+            print("Camera not found or cannot be opened.")
+            return
+            #raise RuntimeError(f"Cannot open camera {self.camera_index}")
 
         # THE MAGIC SEQUENCE - DO NOT CHANGE ORDER!
         self.cap.set(cv2.CAP_PROP_FPS, 30.0)
