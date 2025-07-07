@@ -132,7 +132,7 @@ def setup_ui(controller):
     left_layout = QVBoxLayout()
     
     # Camera title
-    camera_title = QLabel("Calibration")
+    camera_title = QLabel("Robot Arm Calibration")
     camera_title.setAlignment(Qt.AlignCenter)
     camera_title.setStyleSheet("font-size: 16px; font-weight: bold; margin: 2px;")
     camera_title.setMaximumHeight(30)  # Prevent stretching
