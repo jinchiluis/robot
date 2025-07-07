@@ -378,6 +378,8 @@ class QTCamera(QWidget):
 
     def set_area(self, area):
         """Set the area of interest and reset reference frame."""
+        # import traceback
+        # traceback.print_stack()
         self.area = area
         self.reference_frame = None  # Force rebuild of reference frame
 

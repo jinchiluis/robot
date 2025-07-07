@@ -237,6 +237,7 @@ class QTMain_Controller(QMainWindow):
 
         # Disable load configuration in calibration mode
         self.load_config_action.setEnabled(False)
+        self.calibration_controller.update_camera_area()  # Update camera area
 
         # Re-enable camera area controls for calibration mode
         # self.x_spinbox.setEnabled(True)
@@ -351,6 +352,7 @@ class QTMain_Controller(QMainWindow):
         
         self.stacked_widget.setCurrentWidget(self.training_scroll_area)
         self.load_config_action.setEnabled(False)
+        self.training_controller.auto_load_calibration() #in case we do view switch from calibration    
         #self.status_bar.showMessage("Training Mode")
 
         self.view_switched.emit("Training")

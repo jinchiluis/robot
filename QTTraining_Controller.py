@@ -217,36 +217,35 @@ class QTTraining_Controller(QMainWindow):
                 self.camera_area_changed.emit(area['x'], area['y'], area['width'], area['height'])
         
         # Auto-load calibration if available
-        QTimer.singleShot(0, self.auto_load_calibration)
+        if not self.calibration_loaded:
+            QTimer.singleShot(0, self.auto_load_calibration)
         
     def auto_load_calibration(self):
         """Automatically load calibration file from default folder."""
-        # Only auto-load calibration if not already loaded from constructor
-        if not self.calibration_loaded:
-            # Check for calibration file in "calibration" folder
-            calibration_folder = Path("calibration")
-            if calibration_folder.exists():
-                # Look for .json files in the calibration folder
-                calibration_files = list(calibration_folder.glob("*.json"))
-                if calibration_files:
-                    # Take the most recently modified .json file
-                    calibration_file = max(calibration_files, key=lambda f: f.stat().st_mtime)
-                    try:
-                        with open(calibration_file, 'r') as f:
-                            self.calibration_data = json.load(f)
+        # Check for calibration file in "calibration" folder
+        calibration_folder = Path("calibration")
+        if calibration_folder.exists():
+            # Look for .json files in the calibration folder
+            calibration_files = list(calibration_folder.glob("*.json"))
+            if calibration_files:
+                # Take the most recently modified .json file
+                calibration_file = max(calibration_files, key=lambda f: f.stat().st_mtime)
+                try:
+                    with open(calibration_file, 'r') as f:
+                        self.calibration_data = json.load(f)
                         
-                        self.calibration_loaded = True
-                        self.update_status(f"Auto-loaded calibration: {calibration_file.name}")
+                    self.calibration_loaded = True
+                    self.update_status(f"Auto-loaded calibration: {calibration_file.name}")
                         
-                        if 'camera_area' in self.calibration_data:
-                            area = self.calibration_data['camera_area']
-                            camera_area = (area['x'], area['y'], area['width'], area['height'])
-                            self.camera.set_area(camera_area)
-                            # Emit signal to update main UI
-                            self.camera_area_changed.emit(area['x'], area['y'], area['width'], area['height'])
+                    if 'camera_area' in self.calibration_data:
+                        area = self.calibration_data['camera_area']
+                        camera_area = (area['x'], area['y'], area['width'], area['height'])
+                        self.camera.set_area(camera_area)
+                        # Emit signal to update main UI
+                        self.camera_area_changed.emit(area['x'], area['y'], area['width'], area['height'])
                             
-                    except Exception as e:
-                        self.update_status(f"Failed to auto-load calibration: {str(e)}")
+                except Exception as e:
+                    self.update_status(f"Failed to auto-load calibration: {str(e)}")
         
         
     def update_status(self, message):

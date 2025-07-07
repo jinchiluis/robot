@@ -126,6 +126,7 @@ class QTMain_Controller(QMainWindow):
     def switch_to_calibration(self):
         """Switch to calibration page."""
         self.stacked_widget.setCurrentWidget(self.calibration_scroll)
+        self.calibration_controller.update_camera_area()  # Update camera area
         #self.status_bar.showMessage("Calibration Mode - Setup coordinate transformation")
         self.setWindowTitle("PatchCore Vision System - Calibration")
         self.view_switched.emit("Calibration")
