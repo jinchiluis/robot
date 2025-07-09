@@ -1,0 +1,33 @@
+Gemeinsame Ordner definieren (automatisch einbinden, permanent)
+
+Gasterweiterungen einlegen (was du schon gemacht hast)
+In der Windows VM: Öffne den Datei-Explorer
+Suche das CD-Laufwerk: Gehe zu "Dieser PC" - dort sollte ein CD/DVD-Laufwerk erscheinen (oft als "VirtualBox Guest Additions" oder ähnlich)
+Öffne das CD-Laufwerk und suche die Datei VBoxWindowsAdditions.exe
+Rechtsklick auf die Datei → "Als Administrator ausführen"
+Installation durchführen und danach VM vollständig herunterfahren und neu starten
+
+------
+
+Kamera für VM:
+
+Schritt 1 - USB-Filter erstellen:
+
+VM herunterfahren
+VM-Einstellungen → USB
+Stelle sicher, dass "USB-Controller aktivieren" angehakt ist
+Wähle "USB 2.0 (EHCI) Controller" oder "USB 3.0 (xHCI) Controller"
+Klicke auf das Plus-Symbol rechts (USB-Filter hinzufügen)
+Kamera anschließen und aus der Liste auswählen
+OK und VM starten
+
+Schritt 2 - Kamera zur VM zuweisen:
+
+Wenn die VM läuft: VirtualBox-Menü → Geräte → USB
+Deine Kamera sollte dort aufgelistet sein
+Klicke darauf - sie wird zur VM "durchgereicht"
+
+Wichtiger Hinweis:
+
+Während die Kamera an die VM angeschlossen ist, kann dein Host-System sie NICHT verwenden
+Um sie wieder am Host zu nutzen: Geräte → USB → Kamera abwählen
