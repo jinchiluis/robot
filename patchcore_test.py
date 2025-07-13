@@ -23,7 +23,7 @@ from patchcore_dino import PatchCore as PatchCoreDINO
 
 
 class MVTecBenchmark:
-    def __init__(self, mvtec_root, output_dir="benchmark_results", categories=None):
+    def __init__(self, mvtec_root, output_dir="benchmark_results", categories=None, sample_ratio=0.01):
         self.mvtec_root = Path(mvtec_root)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
@@ -37,6 +37,7 @@ class MVTecBenchmark:
             torch.cuda.manual_seed(self.seed)
 
         self.categories = categories
+        self.sample_ratio = sample_ratio
 
         self.results = {
             'system_info': self._get_system_info(),
@@ -180,7 +181,7 @@ class MVTecBenchmark:
         
         return best_metrics
     
-    def train_model(self, model_type, object_name):
+    def train_model(self, model_type, object_name, sample_ratio=0.01):
         """Train a model and measure performance"""
         print(f"\n{'='*60}")
         print(f"Training {model_type} on {object_name}")
@@ -210,7 +211,7 @@ class MVTecBenchmark:
         model.fit(
             train_dir=train_split_dir,
             val_dir=val_split_dir,
-            sample_ratio=0.01,  # 10% as specified
+            sample_ratio=sample_ratio,
             threshold_percentile=95
         )
         
@@ -394,7 +395,7 @@ class MVTecBenchmark:
             
             # Train and evaluate ResNet
             try:
-                resnet_model, resnet_train_results = self.train_model("ResNet", object_name)
+                resnet_model, resnet_train_results = self.train_model("ResNet", object_name, sample_ratio=self.sample_ratio)
                 obj_results['resnet']['training'] = resnet_train_results
                 
                 print(f"\nEvaluating ResNet on {object_name} test set...")
@@ -412,7 +413,7 @@ class MVTecBenchmark:
             
             # Train and evaluate DINOv2
             try:
-                dino_model, dino_train_results = self.train_model("DINOv2", object_name)
+                dino_model, dino_train_results = self.train_model("DINOv2", object_name, sample_ratio=self.sample_ratio)
                 obj_results['dinov2']['training'] = dino_train_results
                 
                 print(f"\nEvaluating DINOv2 on {object_name} test set...")
@@ -751,6 +752,8 @@ def main():
                         help='Output directory for results')
     parser.add_argument('--category', type=str, nargs='*', default=None,
                         help='Subset of categories to benchmark (e.g. --category leather bottle)')
+    parser.add_argument('--sample-ratio', type=float, default=0.01,
+                        help='Sample ratio for PatchCore fit (e.g. 0.01 for 1%)')
 
     args = parser.parse_args()
 
@@ -760,7 +763,7 @@ def main():
         return
 
     # Run benchmark
-    benchmark = MVTecBenchmark(args.mvtec_root, args.output_dir, categories=args.category)
+    benchmark = MVTecBenchmark(args.mvtec_root, args.output_dir, categories=args.category, sample_ratio=args.sample_ratio)
     benchmark.run_benchmark()
 
     print("\nBenchmark completed!")
