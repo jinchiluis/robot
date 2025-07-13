@@ -18,7 +18,7 @@ def setup_ui(controller):
     left_layout = QVBoxLayout()
     
     # Camera title
-    camera_title = QLabel("Training")
+    camera_title = QLabel("DINO Object Detection - Training")
     camera_title.setAlignment(Qt.AlignCenter)
     camera_title.setStyleSheet("font-size: 16px; font-weight: bold; padding: 5px;")
     left_layout.addWidget(camera_title)

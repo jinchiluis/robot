@@ -66,8 +66,8 @@ class QTCalibration_Controller(QMainWindow):
         # Initialize camera area values
         self.camera_area_x = 0
         self.camera_area_y = 0
-        self.camera_area_width = 640
-        self.camera_area_height = 480
+        self.camera_area_width = 1920
+        self.camera_area_height = 1080
         
         # Get current camera area if set
         current_area = self.camera.get_area()

@@ -226,28 +226,28 @@ class QTPatch_Training_Controller(QMainWindow):
         
     def auto_load_calibration(self):
         """Automatically load calibration file from default folder."""
-        if not self.calibration_loaded:
-            calibration_folder = Path("calibration")
-            if calibration_folder.exists():
-                calibration_files = list(calibration_folder.glob("*.json"))
-                if calibration_files:
-                    calibration_file = max(calibration_files, key=lambda f: f.stat().st_mtime)
-                    try:
-                        import json
-                        with open(calibration_file, 'r') as f:
-                            self.calibration_data = json.load(f)
+
+        calibration_folder = Path("calibration")
+        if calibration_folder.exists():
+            calibration_files = list(calibration_folder.glob("*.json"))
+            if calibration_files:
+                calibration_file = max(calibration_files, key=lambda f: f.stat().st_mtime)
+                try:
+                    import json
+                    with open(calibration_file, 'r') as f:
+                        self.calibration_data = json.load(f)
                         
-                        self.calibration_loaded = True
-                        self.update_status(f"Auto-loaded calibration: {calibration_file.name}")
+                    self.calibration_loaded = True
+                    self.update_status(f"Auto-loaded calibration: {calibration_file.name}")
                         
-                        if 'camera_area' in self.calibration_data:
-                            area = self.calibration_data['camera_area']
-                            camera_area = (area['x'], area['y'], area['width'], area['height'])
-                            self.camera.set_area(camera_area)
-                            self.camera_area_changed.emit(area['x'], area['y'], area['width'], area['height'])
+                    if 'camera_area' in self.calibration_data:
+                        area = self.calibration_data['camera_area']
+                        camera_area = (area['x'], area['y'], area['width'], area['height'])
+                        self.camera.set_area(camera_area)
+                        self.camera_area_changed.emit(area['x'], area['y'], area['width'], area['height'])
                             
-                    except Exception as e:
-                        self.update_status(f"Failed to auto-load calibration: {str(e)}")
+                except Exception as e:
+                    self.update_status(f"Failed to auto-load calibration: {str(e)}")
     
     def update_status(self, message):
         """Update status bar."""

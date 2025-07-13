@@ -132,7 +132,7 @@ def setup_ui(controller):
     left_layout = QVBoxLayout()
     
     # Camera title
-    camera_title = QLabel("Calibration")
+    camera_title = QLabel("Robot Arm Calibration")
     camera_title.setAlignment(Qt.AlignCenter)
     camera_title.setStyleSheet("font-size: 16px; font-weight: bold; margin: 2px;")
     camera_title.setMaximumHeight(30)  # Prevent stretching
@@ -176,7 +176,12 @@ def setup_ui(controller):
     controller.height_spinbox.setRange(100, 9999)
     controller.height_spinbox.setValue(controller.camera_area_height)
     camera_controls_layout.addWidget(controller.height_spinbox)
-    
+
+    controller.x_spinbox.valueChanged.connect(controller.update_camera_area)
+    controller.y_spinbox.valueChanged.connect(controller.update_camera_area)
+    controller.width_spinbox.valueChanged.connect(controller.update_camera_area)
+    controller.height_spinbox.valueChanged.connect(controller.update_camera_area)
+
     # Set Camera Area button
     controller.set_area_button = QPushButton("Set Area")
     controller.set_area_button.clicked.connect(controller.update_camera_area)

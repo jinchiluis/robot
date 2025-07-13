@@ -1,0 +1,7 @@
+InnoSetup Starten
+
+Wizard
+
+Am Ende nur das: 
+Source: "D:\Build\NUITKA_solution\QTPatch_Main.dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
