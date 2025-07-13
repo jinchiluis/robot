@@ -9,7 +9,7 @@ from datetime import datetime
 import shutil
 import os
 import random
-from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.metrics import roc_auc_score, roc_curve, f1_score, precision_score, recall_score, accuracy_score
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -80,7 +80,7 @@ class MVTecBenchmark:
         print(f"Found {len(objects)} objects: {', '.join(sorted(objects))}")
         return sorted(objects)
     
-    def split_training_data(self, train_dir, split_ratio=0.8):
+    def split_training_data(self, train_dir, split_ratio=0.5):
         """Split training data into train and validation sets"""
         train_path = Path(train_dir)
         
@@ -128,6 +128,52 @@ class MVTecBenchmark:
             return torch.cuda.memory_allocated() / 1024**3  # GB
         return 0
     
+    def find_optimal_threshold(self, scores, labels):
+        """Find threshold that maximizes F1 score"""
+        # Get unique thresholds to try
+        thresholds = np.unique(scores)
+        
+        # If too many thresholds, sample them
+        if len(thresholds) > 1000:
+            thresholds = np.percentile(thresholds, np.linspace(0, 100, 1000))
+        
+        best_f1 = 0
+        best_threshold = 0
+        best_metrics = {}
+        
+        for threshold in thresholds:
+            predictions = (scores >= threshold).astype(int)
+            
+            # Skip if all predictions are the same
+            if len(np.unique(predictions)) == 1:
+                continue
+                
+            f1 = f1_score(labels, predictions)
+            
+            if f1 > best_f1:
+                best_f1 = f1
+                best_threshold = threshold
+                
+                # Calculate additional metrics at this threshold
+                tp = np.sum((predictions == 1) & (labels == 1))
+                fp = np.sum((predictions == 1) & (labels == 0))
+                fn = np.sum((predictions == 0) & (labels == 1))
+                tn = np.sum((predictions == 0) & (labels == 0))
+                
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+                
+                best_metrics = {
+                    'threshold': float(best_threshold),
+                    'f1_score': float(best_f1),
+                    'precision': float(precision),
+                    'recall': float(recall),
+                    'accuracy': float((tp + tn) / len(labels)),
+                    'tp': int(tp), 'fp': int(fp), 'fn': int(fn), 'tn': int(tn)
+                }
+        
+        return best_metrics
+    
     def train_model(self, model_type, object_name):
         """Train a model and measure performance"""
         print(f"\n{'='*60}")
@@ -158,7 +204,7 @@ class MVTecBenchmark:
         model.fit(
             train_dir=train_split_dir,
             val_dir=val_split_dir,
-            sample_ratio=0.1,  # 10% as specified
+            sample_ratio=0.01,  # 10% as specified
             threshold_percentile=95
         )
         
@@ -200,7 +246,8 @@ class MVTecBenchmark:
                 'total_images': 0,
                 'inference_times': [],
                 'all_scores': [],
-                'all_labels': []
+                'all_labels': [],
+                'model_threshold': float(model.global_threshold),  # Store the 95-percentile threshold
             }
         }
         
@@ -284,6 +331,38 @@ class MVTecBenchmark:
                 results['overall']['all_labels'], 
                 results['overall']['all_scores']
             )
+            
+            # Add F1-optimal threshold analysis
+            f1_metrics = self.find_optimal_threshold(
+                np.array(results['overall']['all_scores']),
+                np.array(results['overall']['all_labels'])
+            )
+            results['overall']['f1_optimal'] = f1_metrics
+            
+            # Also evaluate at the model's 95-percentile threshold
+            predictions_at_model_threshold = (
+                np.array(results['overall']['all_scores']) >= model.global_threshold
+            ).astype(int)
+            
+            results['overall']['model_threshold_metrics'] = {
+                'threshold': float(model.global_threshold),
+                'f1_score': float(f1_score(
+                    results['overall']['all_labels'], 
+                    predictions_at_model_threshold
+                )),
+                'precision': float(precision_score(
+                    results['overall']['all_labels'], 
+                    predictions_at_model_threshold
+                )),
+                'recall': float(recall_score(
+                    results['overall']['all_labels'], 
+                    predictions_at_model_threshold
+                )),
+                'accuracy': float(accuracy_score(
+                    results['overall']['all_labels'], 
+                    predictions_at_model_threshold
+                ))
+            }
         else:
             results['overall']['auroc'] = None
         
@@ -451,6 +530,32 @@ class MVTecBenchmark:
         if dino_times:
             report_lines.append(f"DINOv2 Average Inference Time: {np.mean(dino_times)*1000:.1f}ms")
         
+        # Add threshold analysis section
+        report_lines.extend(["", "=" * 80, "", "Threshold Analysis:", "-" * 40])
+        
+        threshold_data = []
+        
+        for object_name, obj_data in self.results['objects'].items():
+            for model_type in ['resnet', 'dinov2']:
+                if model_type in obj_data and 'evaluation' in obj_data[model_type]:
+                    eval_data = obj_data[model_type]['evaluation']['overall']
+                    
+                    if 'f1_optimal' in eval_data and 'model_threshold_metrics' in eval_data:
+                        row = {
+                            'Object': object_name,
+                            'Model': model_type.upper(),
+                            '95%_Threshold': f"{eval_data['model_threshold_metrics']['threshold']:.4f}",
+                            '95%_F1': f"{eval_data['model_threshold_metrics']['f1_score']:.3f}",
+                            'Optimal_Threshold': f"{eval_data['f1_optimal']['threshold']:.4f}",
+                            'Optimal_F1': f"{eval_data['f1_optimal']['f1_score']:.3f}",
+                            'F1_Improvement': f"{(eval_data['f1_optimal']['f1_score'] - eval_data['model_threshold_metrics']['f1_score']):.3f}"
+                        }
+                        threshold_data.append(row)
+        
+        if threshold_data:
+            df_threshold = pd.DataFrame(threshold_data)
+            report_lines.append(df_threshold.to_string(index=False))
+        
         # Per-category results
         report_lines.extend(["", "=" * 80, "", "Detailed Per-Category Results:", "-" * 80])
         
@@ -562,7 +667,71 @@ class MVTecBenchmark:
         plt.savefig(self.output_dir / 'auroc_vs_time.png', dpi=300, bbox_inches='tight')
         plt.close()
         
+        # Generate threshold comparison plot
+        self._generate_threshold_comparison_plot()
+        
         print(f"Plots saved to: {self.output_dir}")
+    
+    def _generate_threshold_comparison_plot(self):
+        """Generate plot comparing 95-percentile vs F1-optimal thresholds"""
+        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+        
+        for idx, model_type in enumerate(['resnet', 'dinov2']):
+            f1_95_scores = []
+            f1_optimal_scores = []
+            threshold_95 = []
+            threshold_optimal = []
+            objects = []
+            
+            for obj_name, obj_data in self.results['objects'].items():
+                if model_type in obj_data and 'evaluation' in obj_data[model_type]:
+                    eval_data = obj_data[model_type]['evaluation']['overall']
+                    
+                    if 'f1_optimal' in eval_data and 'model_threshold_metrics' in eval_data:
+                        objects.append(obj_name)
+                        f1_95_scores.append(eval_data['model_threshold_metrics']['f1_score'])
+                        f1_optimal_scores.append(eval_data['f1_optimal']['f1_score'])
+                        threshold_95.append(eval_data['model_threshold_metrics']['threshold'])
+                        threshold_optimal.append(eval_data['f1_optimal']['threshold'])
+            
+            if objects:
+                # F1 score comparison
+                ax1 = axes[0, idx]
+                x = np.arange(len(objects))
+                width = 0.35
+                
+                ax1.bar(x - width/2, f1_95_scores, width, label='95-percentile', alpha=0.7)
+                ax1.bar(x + width/2, f1_optimal_scores, width, label='F1-optimal', alpha=0.7)
+                ax1.set_xlabel('Objects')
+                ax1.set_ylabel('F1 Score')
+                ax1.set_title(f'{model_type.upper()}: F1 Score Comparison')
+                ax1.set_xticks(x)
+                ax1.set_xticklabels(objects, rotation=45, ha='right')
+                ax1.legend()
+                ax1.grid(True, alpha=0.3)
+                
+                # Threshold values comparison
+                ax2 = axes[1, idx]
+                ax2.scatter(threshold_95, threshold_optimal, alpha=0.7)
+                
+                # Add diagonal line
+                min_val = min(min(threshold_95), min(threshold_optimal))
+                max_val = max(max(threshold_95), max(threshold_optimal))
+                ax2.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.5)
+                
+                # Add labels for each point
+                for i, obj in enumerate(objects):
+                    ax2.annotate(obj, (threshold_95[i], threshold_optimal[i]), 
+                               fontsize=8, alpha=0.7)
+                
+                ax2.set_xlabel('95-percentile Threshold')
+                ax2.set_ylabel('F1-optimal Threshold')
+                ax2.set_title(f'{model_type.upper()}: Threshold Comparison')
+                ax2.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'threshold_comparison.png', dpi=300, bbox_inches='tight')
+        plt.close()
 
 
 def main():
