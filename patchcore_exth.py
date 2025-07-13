@@ -2,6 +2,7 @@
 """PatchCore 1.0"""
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision.models as models
 from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
@@ -106,10 +107,11 @@ class PatchCore:
                 module.register_forward_hook(hook_fn(name))
         return features
 
-    def extract_features(self, images, return_spatial=False):
+    def extract_features(self, images, return_spatial=False, use_neighborhood_aggregation=True):
         """Extract multi-scale features"""
         features = []
         spatial_features = []
+        neighborhood_size = 3  # 3x3 neighborhood (best performance)
     
         with torch.no_grad():
             _ = self.model(images)
@@ -130,7 +132,16 @@ class PatchCore:
                         mode='bilinear', 
                         align_corners=False
                     )
-            
+
+                # Apply neighborhood aggregation if enabled
+                if use_neighborhood_aggregation:
+                    layer_features = F.avg_pool2d(
+                        layer_features,
+                        kernel_size=neighborhood_size,
+                        stride=1,
+                        padding=neighborhood_size // 2 #returns 1 for 3x3 neighborhood
+                    )
+
                 if return_spatial:
                     spatial_features.append(layer_features)
             
