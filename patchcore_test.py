@@ -84,10 +84,15 @@ class MVTecBenchmark:
         """Split training data into train and validation sets"""
         train_path = Path(train_dir)
         
-        # Get all image files
-        image_files = []
-        for ext in ['*.png', '*.jpg', '*.jpeg', '*.PNG', '*.JPG', '*.JPEG']:
-            image_files.extend(list(train_path.glob(ext)))
+        # Get all image files (case-insensitive but avoiding duplicates)
+        image_files = set()  # Use set to avoid duplicates
+        for ext in ['*.png', '*.jpg', '*.jpeg']:
+            # Add both lowercase and uppercase versions
+            image_files.update(train_path.glob(ext))
+            image_files.update(train_path.glob(ext.upper()))
+        
+        # Convert back to list for shuffling
+        image_files = list(image_files)
         
         # Shuffle and split
         random.shuffle(image_files)
