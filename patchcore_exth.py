@@ -237,7 +237,7 @@ class PatchCore:
         
         return index
     
-    def fit(self, train_dir, sample_ratio=0.01, threshold_percentile=99, val_dir=None, callback=None):
+    def fit(self, train_dir, sample_ratio=0.01, threshold_percentile=95, val_dir=None, callback=None):
         """Optimized training with faster data loading and processing"""
         print(f"Training Optimized PatchCore on: {train_dir}")
         start_time = time.time()

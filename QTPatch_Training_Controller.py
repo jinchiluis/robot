@@ -175,7 +175,7 @@ class QTPatch_Training_Controller(QMainWindow):
         
         # Training parameters
         self.sample_ratio = 0.30  # 30% default... 1%: ~95% AUROC//10%: ~99% AUROC//25%: ~99.5% AUROC//50%: ~99.6% AUROC
-        self.threshold_percentile = 99  # 99% default
+        self.threshold_percentile = 99  # 99% default kann man auch 95% nehmen
         self.backbone = 'wide_resnet50_2'  # Default backbone
         
         # Calibration

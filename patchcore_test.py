@@ -159,7 +159,7 @@ class MVTecBenchmark:
             train_dir=train_split_dir,
             val_dir=val_split_dir,
             sample_ratio=0.1,  # 10% as specified
-            threshold_percentile=99
+            threshold_percentile=95
         )
         
         train_time = time.time() - start_time
