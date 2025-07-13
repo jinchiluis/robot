@@ -23,11 +23,11 @@ from patchcore_dino import PatchCore as PatchCoreDINO
 
 
 class MVTecBenchmark:
-    def __init__(self, mvtec_root, output_dir="benchmark_results"):
+    def __init__(self, mvtec_root, output_dir="benchmark_results", categories=None):
         self.mvtec_root = Path(mvtec_root)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
-        
+
         # Set random seeds for reproducibility
         self.seed = 42
         random.seed(self.seed)
@@ -35,13 +35,15 @@ class MVTecBenchmark:
         torch.manual_seed(self.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed(self.seed)
-        
+
+        self.categories = categories
+
         self.results = {
             'system_info': self._get_system_info(),
             'benchmark_start': datetime.now().isoformat(),
             'objects': {}
         }
-        
+
         # Temp directory for model checkpoints
         self.temp_dir = Path("temp_models")
         self.temp_dir.mkdir(exist_ok=True)
@@ -68,7 +70,7 @@ class MVTecBenchmark:
         return info
     
     def discover_objects(self):
-        """Find all object folders in MVTec dataset"""
+        """Find all object folders in MVTec dataset, optionally filter by categories"""
         objects = []
         for item in self.mvtec_root.iterdir():
             if item.is_dir():
@@ -76,7 +78,11 @@ class MVTecBenchmark:
                 test_path = item / "test"
                 if train_path.exists() and test_path.exists():
                     objects.append(item.name)
-        
+
+        if self.categories:
+            # Filter to only requested categories
+            objects = [obj for obj in objects if obj in self.categories]
+
         print(f"Found {len(objects)} objects: {', '.join(sorted(objects))}")
         return sorted(objects)
     
@@ -743,18 +749,20 @@ def main():
                         help='Path to MVTec dataset root directory')
     parser.add_argument('--output-dir', type=str, default='benchmark_results',
                         help='Output directory for results')
-    
+    parser.add_argument('--category', type=str, nargs='*', default=None,
+                        help='Subset of categories to benchmark (e.g. --category leather bottle)')
+
     args = parser.parse_args()
-    
+
     # Check if MVTec directory exists
     if not Path(args.mvtec_root).exists():
         print(f"Error: MVTec directory not found at {args.mvtec_root}")
         return
-    
+
     # Run benchmark
-    benchmark = MVTecBenchmark(args.mvtec_root, args.output_dir)
+    benchmark = MVTecBenchmark(args.mvtec_root, args.output_dir, categories=args.category)
     benchmark.run_benchmark()
-    
+
     print("\nBenchmark completed!")
     print(f"Results saved to: {args.output_dir}")
 
