@@ -27,6 +27,8 @@ data/
 logs/
 checkpoints/
 models/
+mvtec/
+benchmark_results/
 
 .git-backup/
 config/config.json
