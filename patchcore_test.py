@@ -197,7 +197,7 @@ class MVTecBenchmark:
         if model_type == "ResNet":
             model = PatchCoreResNet(backbone='wide_resnet50_2')
         else:  # DINOv2
-            model = PatchCoreDINO(backbone='dinov2_vitb14')
+            model = PatchCoreDINO(backbone='dinov2_vitl14')
         
         # Clear GPU cache
         if torch.cuda.is_available():
@@ -386,10 +386,7 @@ class MVTecBenchmark:
             print(f"Processing object {obj_idx+1}/{len(objects)}: {object_name}")
             print(f"{'#'*80}")
             
-            obj_results = {
-                'resnet': {},
-                'dinov2': {}
-            }
+            obj_results = {}
             
             test_dir = self.mvtec_root / object_name / "test"
             
@@ -397,37 +394,34 @@ class MVTecBenchmark:
             if model is None or model == 'wideresnet':
                 try:
                     resnet_model, resnet_train_results = self.train_model("ResNet", object_name, sample_ratio=self.sample_ratio)
+                    obj_results['resnet'] = {}
                     obj_results['resnet']['training'] = resnet_train_results
-                    
                     print(f"\nEvaluating ResNet on {object_name} test set...")
                     resnet_eval_results = self.evaluate_model(resnet_model, test_dir, object_name, "ResNet")
                     obj_results['resnet']['evaluation'] = resnet_eval_results
-                    
                     # Clean up
                     del resnet_model
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                
                 except Exception as e:
+                    obj_results['resnet'] = {}
                     print(f"Error with ResNet on {object_name}: {e}")
                     obj_results['resnet']['error'] = str(e)
-            
             # Train and evaluate DINOv2
             if model is None or model == 'dinov2':
                 try:
                     dino_model, dino_train_results = self.train_model("DINOv2", object_name, sample_ratio=self.sample_ratio)
+                    obj_results['dinov2'] = {}
                     obj_results['dinov2']['training'] = dino_train_results
-                    
                     print(f"\nEvaluating DINOv2 on {object_name} test set...")
                     dino_eval_results = self.evaluate_model(dino_model, test_dir, object_name, "DINOv2")
                     obj_results['dinov2']['evaluation'] = dino_eval_results
-                    
                     # Clean up
                     del dino_model
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                
                 except Exception as e:
+                    obj_results['dinov2'] = {}
                     print(f"Error with DINOv2 on {object_name}: {e}")
                     obj_results['dinov2']['error'] = str(e)
             
