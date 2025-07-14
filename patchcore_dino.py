@@ -24,7 +24,7 @@ except ImportError:
 
 
 class PatchCore:
-    def __init__(self, backbone='dinov2_vitb14'):
+    def __init__(self, backbone='dinov2_vitl14'):
         if torch.cuda.is_available():
             self.device = 'cuda'
         else:
@@ -318,7 +318,6 @@ class PatchCore:
     
     def calculate_anomaly_score(self, features, return_patch_scores=False):
         """Calculate 2D anomaly score with FAISS or scipy fallback"""
-        start_time = time.perf_counter()
         if len(features.shape) == 1:
             features = features.reshape(1, -1)
 
@@ -333,9 +332,6 @@ class PatchCore:
         # 1D min_distances
         if len(min_distances.shape) == 0:
             min_distances = np.array([min_distances])
-
-        execution_time = time.perf_counter() - start_time
-        print(f"calculate anomaly took {execution_time:.4f} seconds")
         
         if return_patch_scores:
             return min_distances

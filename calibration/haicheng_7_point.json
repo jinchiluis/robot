@@ -1,0 +1,74 @@
+{
+  "calibration_points": [
+    {
+      "pixel_x": 604,
+      "pixel_y": 802,
+      "robot_x": 440,
+      "robot_y": 160
+    },
+    {
+      "pixel_x": 602,
+      "pixel_y": 6,
+      "robot_x": 440,
+      "robot_y": -180
+    },
+    {
+      "pixel_x": 602,
+      "pixel_y": 394,
+      "robot_x": 440,
+      "robot_y": -20
+    },
+    {
+      "pixel_x": 999,
+      "pixel_y": 391,
+      "robot_x": 250,
+      "robot_y": -20
+    },
+    {
+      "pixel_x": 1395,
+      "pixel_y": 396,
+      "robot_x": 90,
+      "robot_y": -20
+    },
+    {
+      "pixel_x": 1384,
+      "pixel_y": 2,
+      "robot_x": 90,
+      "robot_y": -180
+    },
+    {
+      "pixel_x": 1404,
+      "pixel_y": 811,
+      "robot_x": 90,
+      "robot_y": 160
+    }
+  ],
+  "is_calibrated": true,
+  "calibration_error": 0.0,
+  "transformation_matrix": [
+    [
+      -0.4420945881095758,
+      0.00630998746434443,
+      701.7943694300998
+    ],
+    [
+      -0.0012773464781811413,
+      0.4238158384287856,
+      -182.65761819927633
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "num_points": 7,
+  "name": "haicheng_7_point.json",
+  "created": "2025-07-14T12:06:37.638024",
+  "camera_area": {
+    "x": 144,
+    "y": 155,
+    "width": 1450,
+    "height": 812
+  }
+}
