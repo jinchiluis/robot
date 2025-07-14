@@ -377,7 +377,7 @@ class MVTecBenchmark:
         
         return results
     
-    def run_benchmark(self):
+    def run_benchmark(self, model=None):
         """Run complete benchmark"""
         objects = self.discover_objects()
         
@@ -394,40 +394,42 @@ class MVTecBenchmark:
             test_dir = self.mvtec_root / object_name / "test"
             
             # Train and evaluate ResNet
-            try:
-                resnet_model, resnet_train_results = self.train_model("ResNet", object_name, sample_ratio=self.sample_ratio)
-                obj_results['resnet']['training'] = resnet_train_results
+            if model is None or model == 'wideresnet':
+                try:
+                    resnet_model, resnet_train_results = self.train_model("ResNet", object_name, sample_ratio=self.sample_ratio)
+                    obj_results['resnet']['training'] = resnet_train_results
+                    
+                    print(f"\nEvaluating ResNet on {object_name} test set...")
+                    resnet_eval_results = self.evaluate_model(resnet_model, test_dir, object_name, "ResNet")
+                    obj_results['resnet']['evaluation'] = resnet_eval_results
+                    
+                    # Clean up
+                    del resnet_model
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
                 
-                print(f"\nEvaluating ResNet on {object_name} test set...")
-                resnet_eval_results = self.evaluate_model(resnet_model, test_dir, object_name, "ResNet")
-                obj_results['resnet']['evaluation'] = resnet_eval_results
-                
-                # Clean up
-                del resnet_model
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                
-            except Exception as e:
-                print(f"Error with ResNet on {object_name}: {e}")
-                obj_results['resnet']['error'] = str(e)
+                except Exception as e:
+                    print(f"Error with ResNet on {object_name}: {e}")
+                    obj_results['resnet']['error'] = str(e)
             
             # Train and evaluate DINOv2
-            try:
-                dino_model, dino_train_results = self.train_model("DINOv2", object_name, sample_ratio=self.sample_ratio)
-                obj_results['dinov2']['training'] = dino_train_results
+            if model is None or model == 'dinov2':
+                try:
+                    dino_model, dino_train_results = self.train_model("DINOv2", object_name, sample_ratio=self.sample_ratio)
+                    obj_results['dinov2']['training'] = dino_train_results
+                    
+                    print(f"\nEvaluating DINOv2 on {object_name} test set...")
+                    dino_eval_results = self.evaluate_model(dino_model, test_dir, object_name, "DINOv2")
+                    obj_results['dinov2']['evaluation'] = dino_eval_results
+                    
+                    # Clean up
+                    del dino_model
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
                 
-                print(f"\nEvaluating DINOv2 on {object_name} test set...")
-                dino_eval_results = self.evaluate_model(dino_model, test_dir, object_name, "DINOv2")
-                obj_results['dinov2']['evaluation'] = dino_eval_results
-                
-                # Clean up
-                del dino_model
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                
-            except Exception as e:
-                print(f"Error with DINOv2 on {object_name}: {e}")
-                obj_results['dinov2']['error'] = str(e)
+                except Exception as e:
+                    print(f"Error with DINOv2 on {object_name}: {e}")
+                    obj_results['dinov2']['error'] = str(e)
             
             self.results['objects'][object_name] = obj_results
             
@@ -754,6 +756,8 @@ def main():
                         help='Subset of categories to benchmark (e.g. --category leather bottle)')
     parser.add_argument('--sample-ratio', type=float, default=0.01,
                         help='Sample ratio for PatchCore fit (e.g. 0.01 for 1%)')
+    parser.add_argument('--model', type=str, choices=['dinov2', 'wideresnet'], default=None,
+                        help='Model to benchmark: dinov2 or wideresnet (default: both)')
 
     args = parser.parse_args()
 
@@ -764,7 +768,7 @@ def main():
 
     # Run benchmark
     benchmark = MVTecBenchmark(args.mvtec_root, args.output_dir, categories=args.category, sample_ratio=args.sample_ratio)
-    benchmark.run_benchmark()
+    benchmark.run_benchmark(model=args.model)
 
     print("\nBenchmark completed!")
     print(f"Results saved to: {args.output_dir}")
