@@ -24,7 +24,7 @@ except ImportError:
 
 
 class PatchCore:
-    def __init__(self, backbone='dinov2_vitl14'):
+    def __init__(self, backbone='dinov2_vitb14'):
         if torch.cuda.is_available():
             self.device = 'cuda'
         else:
@@ -51,6 +51,13 @@ class PatchCore:
         self.model = torch.hub.load('facebookresearch/dinov2', backbone)
         self.model.to(self.device)
         self.model.eval()
+
+        if backbone == 'dinov2_vitb14':
+            #Load NeCo checkpoint
+            neco_path = "path/to/downloaded/neco_on_dinov2r_vit14_teacher.ckpt"
+            # Load the NeCo weights
+            state_dict = torch.load(neco_path, map_location='cpu')
+            #self.model.load_state_dict(state_dict, strict=False)
         
         # Get feature dimensions based on model variant
         self.feature_dims = {
