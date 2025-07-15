@@ -430,7 +430,8 @@ class QTPatch_Inference_Controller(QMainWindow):
                     # Play beep sound on anomaly if available
                     try:
                         if self.sound_enabled:
-                            winsound.Beep(1000, 200)  # 1000 Hz, 200 ms
+                            for _ in range(3):
+                                winsound.Beep(1000, 200)  # 1000 Hz, 200 ms
                     except Exception as e:
                         self.log(f"Sound playback failed: {e}")
                 else:
@@ -505,7 +506,7 @@ class QTPatch_Inference_Controller(QMainWindow):
             robot_x, robot_y = cmd['robot']
             if action == self.anomaly_action:
                 # For anomalies, process red plane
-                steps.append(('process_blue_plane', robot_x, robot_y))
+                steps.append(('process_red_plane', robot_x, robot_y))
             elif action == self.normal_action:
                 # For normal items, process blue plane
                 steps.append(('process_nothing_plane', robot_x, robot_y))  

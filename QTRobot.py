@@ -63,25 +63,25 @@ class RobotWorker(QThread):
             move_x = x-20
         
         double_swipe = False
-        if -75 < y < 40 and x < 300:
-            double_swipe = True
+        # if -75 < y < 40 and x < 300:
+        #     double_swipe = True
 
         if y < 0:
-            self.robot_api.move_to(move_x, y+120, -100, 3.14, speed=10, wait_time=1)
-            self.robot_api.move_to(move_x, -180, -100, 3.14, speed=0, wait_time=1)
+            self.robot_api.move_to(move_x, y+70, -100, 3.14, speed=10, wait_time=1)
+            self.robot_api.move_to(move_x, -200, -100, 3.14, speed=0, wait_time=1)
         else:
-            self.robot_api.move_to(move_x, y-120, -100, 3.14, speed=10, wait_time=1)
-            self.robot_api.move_to(move_x, 200, -100, 3.14, speed=0, wait_time=1)
+            self.robot_api.move_to(move_x, y-70, -100, 3.14, speed=10, wait_time=1)
+            self.robot_api.move_to(move_x, 220, -100, 3.14, speed=0, wait_time=1)
         
         if double_swipe:
             if y < 0:
                 self.robot_api.move_to(move_x, y, 0, 3.14, speed=0, wait_time=1)
                 self.robot_api.move_to(move_x, y, -100, 3.14, speed=0, wait_time=1)
-                self.robot_api.move_to(move_x-20, -180, -100, 3.14, speed=0, wait_time=1)
+                self.robot_api.move_to(move_x-20, -200, -100, 3.14, speed=0, wait_time=1)
             else:
                 self.robot_api.move_to(move_x, y, 0, 3.14, speed=0, wait_time=1)
                 self.robot_api.move_to(move_x, y, -100, 3.14, speed=0, wait_time=1)
-                self.robot_api.move_to(move_x-20, 200, -100, 3.14, speed=0, wait_time=1)
+                self.robot_api.move_to(move_x-20, 220, -100, 3.14, speed=0, wait_time=1)
 
         # Return to initial position
         self.robot_api.move_to(50, 0, -40, 3.14, speed=10, wait_time=1)
@@ -106,7 +106,7 @@ class RobotWorker(QThread):
         
         # Hand movements
         self.robot_api.move_to(x, y, z, 3.14, speed=10, wait_time=1)
-        self.robot_api.move_hand(1.5, speed=0, wait_time=0)
+        self.robot_api.move_hand(0.3, speed=0, wait_time=0)
         self.robot_api.move_hand(3.14, speed=0, wait_time=2)
         
         # Return to initial position
