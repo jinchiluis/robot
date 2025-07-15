@@ -87,7 +87,7 @@ class MVTecBenchmark:
         print(f"Found {len(objects)} objects: {', '.join(sorted(objects))}")
         return sorted(objects)
     
-    def split_training_data(self, train_dir, split_ratio=0.5):
+    def split_training_data(self, train_dir, split_ratio=0.99):
         """Split training data into train and validation sets"""
         train_path = Path(train_dir)
         
@@ -426,9 +426,18 @@ class MVTecBenchmark:
                     obj_results['dinov2']['error'] = str(e)
             
             self.results['objects'][object_name] = obj_results
-            
             # Save intermediate results
             self._save_results()
+            # Print AUROC for each model after object run
+            resnet_auroc = obj_results.get('resnet', {}).get('evaluation', {}).get('overall', {}).get('auroc', None)
+            dino_auroc = obj_results.get('dinov2', {}).get('evaluation', {}).get('overall', {}).get('auroc', None)
+            if resnet_auroc is not None:
+                print(f"ResNet AUROC for {object_name}: {resnet_auroc:.3f}")
+            if dino_auroc is not None:
+                print(f"DINOv2 AUROC for {object_name}: {dino_auroc:.3f}")
+            
+            # Save intermediate results
+            #self._save_results()
         
         self.results['benchmark_end'] = datetime.now().isoformat()
         self._save_results()

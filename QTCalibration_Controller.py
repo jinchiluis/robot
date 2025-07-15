@@ -428,7 +428,7 @@ class QTCalibration_Controller(QMainWindow):
             
             calibration_data['filepath'] = str(filepath)  
             # Emit signal with calibration data
-            self.calibration_saved.emit(calibration_data)
+            #self.calibration_saved.emit(calibration_data)
                 
             QMessageBox.information(self, "Saved", f"Calibration saved as '{name}'")
             self.state = self.STATE_COMPLETE
