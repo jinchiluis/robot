@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""PatchCore with DINOv2 - Vision Transformer based anomaly detection"""
+"""PatchCore Hybrid - Combining WideResNet and DINOv2 features"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.models as models
 from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
 from PIL import Image
@@ -24,7 +25,7 @@ except ImportError:
 
 
 class PatchCore:
-    def __init__(self, backbone='dinov2_vitb14'):
+    def __init__(self, backbone='hybrid'):
         if torch.cuda.is_available():
             self.device = 'cuda'
         else:
@@ -38,40 +39,30 @@ class PatchCore:
             print(torch.cuda.get_device_name(0))
         print(f"FAISS available: {FAISS_AVAILABLE}  ")
         
-        # DINOv2 model variants
-        valid_backbones = ['dinov2_vits14', 'dinov2_vitb14', 'dinov2_vitl14', 'dinov2_vitg14']
-        if backbone not in valid_backbones:
-            print(f"Warning: {backbone} not recognized. Using dinov2_vitb14")
-            backbone = 'dinov2_vitb14'
+        # Initialize WideResNet
+        print("Loading WideResNet50_2...")
+        self.wr_model = models.wide_resnet50_2(weights=models.Wide_ResNet50_2_Weights.IMAGENET1K_V1)
+        self.wr_feature_layers = ['layer2', 'layer3']
+        self._setup_wideresnet()
         
-        self.backbone_name = backbone
-        print(f"Loading DINOv2 model: {backbone}")
+        # Initialize DINOv2
+        print("Loading DINOv2 vitb14...")
+        self.dino_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+        self.dino_model.to(self.device)
+        self.dino_model.eval()
         
-        # Load DINOv2 from torch hub
-        self.model = torch.hub.load('facebookresearch/dinov2', backbone)
-        self.model.to(self.device)
-        self.model.eval()
-
-        # if backbone == 'dinov2_vitb14':
-        #     #Load NeCo checkpoint https://huggingface.co/FunAILab/NeCo/blob/main/vit-base/dinov2-architectures/neco_on_dinov2r_vit14_teacher.ckpt
-        #     neco_path = "dino_checkpoint/neco_on_dinov2r_vit14_teacher.ckpt"
-        #     # Load the NeCo weights
-        #     state_dict = torch.load(neco_path, map_location='cuda')
-        #     self.model.load_state_dict(state_dict, strict=False)
-        
-        # Get feature dimensions based on model variant
-        self.feature_dims = {
-            'dinov2_vits14': 384,
-            'dinov2_vitb14': 768,
-            'dinov2_vitl14': 1024,
-            'dinov2_vitg14': 1536
-        }[backbone]
-        
-        print(f"DINOv2 feature dimension: {self.feature_dims}")
-        
-        # Disable gradient computation
-        for param in self.model.parameters():
+        # Disable gradients for both models
+        for param in self.wr_model.parameters():
             param.requires_grad = False
+        for param in self.dino_model.parameters():
+            param.requires_grad = False
+        
+        # Feature dimensions
+        self.wr_feature_dim = 1792  # 768 + 1024 from layer2 + layer3
+        self.dino_feature_dim = 768
+        self.combined_feature_dim = self.wr_feature_dim + self.dino_feature_dim
+        
+        print(f"Combined feature dimension: {self.combined_feature_dim}")
         
         # Storage
         self.memory_bank = None
@@ -83,8 +74,7 @@ class PatchCore:
         self.feature_map_size = None
         
         # Image preprocessing
-        # DINOv2 expects images divisible by 14 (patch size)
-        self.image_size = 518  # 518 = 37 * 14
+        self.image_size = 518  # Divisible by 14 for DINOv2
         self.transform_train = transforms.Compose([
             transforms.Resize((self.image_size, self.image_size)),
             transforms.ToTensor(),
@@ -98,42 +88,125 @@ class PatchCore:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                                std=[0.229, 0.224, 0.225])
         ])
-
-    def extract_features(self, images, return_spatial=False, use_neighborhood_aggregation=False):
-        """Extract DINOv2 patch token features"""
+    
+    def _setup_wideresnet(self):
+        """Setup WideResNet feature extraction"""
+        # Replace BatchNorm with fixed behavior
+        for module in self.wr_model.modules():
+            if isinstance(module, nn.BatchNorm2d):
+                module.eval()
+                module.weight.requires_grad = False
+                module.bias.requires_grad = False
+                module.momentum = 0
+        
+        # Setup feature extractor
+        self.wr_features = {}
+        def hook_fn(name):
+            def hook(module, input, output):
+                self.wr_features[name] = output
+            return hook
+        
+        for name, module in self.wr_model.named_modules():
+            if name in self.wr_feature_layers:
+                module.register_forward_hook(hook_fn(name))
+        
+        self.wr_model.to(self.device)
+        self.wr_model.eval()
+    
+    def extract_wr_features(self, images, use_neighborhood_aggregation=True):
+        """Extract WideResNet features with neighborhood aggregation"""
+        features = []
+        neighborhood_size = 3
+        
         with torch.no_grad():
-            # DINOv2 forward_features returns dict with patch tokens
-            features_dict = self.model.forward_features(images)
+            _ = self.wr_model(images)
+            reference_size = None
+            
+            for layer_name in self.wr_feature_layers:
+                layer_features = self.wr_features[layer_name]
+                b, c, h, w = layer_features.shape
+                
+                if reference_size is None:
+                    reference_size = (h, w)
+                
+                if (h, w) != reference_size:
+                    layer_features = F.interpolate(
+                        layer_features, 
+                        size=reference_size, 
+                        mode='bilinear', 
+                        align_corners=False
+                    )
+                
+                # Apply neighborhood aggregation for WideResNet
+                if use_neighborhood_aggregation:
+                    layer_features = F.avg_pool2d(
+                        layer_features,
+                        kernel_size=neighborhood_size,
+                        stride=1,
+                        padding=neighborhood_size // 2
+                    )
+                
+                layer_features = layer_features.permute(0, 2, 3, 1).reshape(b, reference_size[0]*reference_size[1], c)
+                features.append(layer_features)
+        
+        return torch.cat(features, dim=-1), reference_size
+    
+    def extract_dino_features(self, images):
+        """Extract DINOv2 features without neighborhood aggregation"""
+        with torch.no_grad():
+            features_dict = self.dino_model.forward_features(images)
             features = features_dict['x_norm_patchtokens']
             
             # features shape: (B, N_patches, D)
             b, n_patches, d = features.shape
             
-            # Calculate spatial dimensions (assuming square images)
+            # Calculate spatial dimensions
             h = w = int(np.sqrt(n_patches))
-            self.feature_map_size = (h, w)
             
-            # Optional neighborhood aggregation (probably not needed for DINOv2)
-            if use_neighborhood_aggregation:
-                # Reshape to spatial format for pooling
-                spatial_features = features.reshape(b, h, w, d).permute(0, 3, 1, 2)
-                neighborhood_size = 3
-                spatial_features = F.avg_pool2d(
-                    spatial_features,
-                    kernel_size=neighborhood_size,
-                    stride=1,
-                    padding=neighborhood_size // 2
-                )
-                # Reshape back
-                _, _, h_pooled, w_pooled = spatial_features.shape
-                features = spatial_features.permute(0, 2, 3, 1).reshape(b, h_pooled * w_pooled, d)
-                self.feature_map_size = (h_pooled, w_pooled)
+            return features, (h, w)
+    
+    def extract_features(self, images, return_spatial=False):
+        """Extract and combine features from both models"""
+        # Extract WideResNet features with neighborhood aggregation
+        wr_features, wr_spatial_size = self.extract_wr_features(images, use_neighborhood_aggregation=True)
+        
+        # Extract DINOv2 features without neighborhood aggregation
+        dino_features, dino_spatial_size = self.extract_dino_features(images)
+        
+        # Verify spatial dimensions match
+        wr_patches = wr_features.shape[1]
+        dino_patches = dino_features.shape[1]
+        
+        if wr_patches != dino_patches:
+            # Interpolate WideResNet features to match DINOv2 spatial size
+            b = wr_features.shape[0]
+            h_wr, w_wr = wr_spatial_size
+            h_dino, w_dino = dino_spatial_size
             
-            if return_spatial:
-                spatial_features = features.reshape(b, h, w, d).permute(0, 3, 1, 2)
-                return features, spatial_features
-                
-            return features
+            wr_features_spatial = wr_features.reshape(b, h_wr, w_wr, -1).permute(0, 3, 1, 2)
+            wr_features_spatial = F.interpolate(
+                wr_features_spatial,
+                size=(h_dino, w_dino),
+                mode='bilinear',
+                align_corners=False
+            )
+            wr_features = wr_features_spatial.permute(0, 2, 3, 1).reshape(b, h_dino * w_dino, -1)
+            
+            self.feature_map_size = dino_spatial_size
+        else:
+            self.feature_map_size = dino_spatial_size
+        
+        # Simply concatenate features
+        combined_features = torch.cat([wr_features, dino_features], dim=-1)
+        
+        if return_spatial:
+            # For heatmap generation
+            b, n_patches, d = combined_features.shape
+            h, w = self.feature_map_size
+            spatial_features = combined_features.reshape(b, h, w, d).permute(0, 3, 1, 2)
+            return combined_features, spatial_features
+        
+        return combined_features
     
     def adaptive_sampling(self, features, sampling_ratio=0.01, callback=None):
         """Optimized K-center greedy sampling with GPU acceleration"""
@@ -218,7 +291,7 @@ class PatchCore:
     
     def fit(self, train_dir, sample_ratio=0.01, threshold_percentile=99, val_dir=None, callback=None):
         """Optimized training with faster data loading and processing"""
-        print(f"Training PatchCore-DINOv2 on: {train_dir}")
+        print(f"Training Hybrid PatchCore (WideResNet + DINOv2) on: {train_dir}")
         start_time = time.time()
         
         # Create dataset
@@ -234,11 +307,11 @@ class PatchCore:
         all_features = []
         
         # Extract features
-        print(f"Extracting DINOv2 features from {len(dataloader)} batches...")
+        print(f"Extracting hybrid features from {len(dataloader)} batches...")
         start_time2 = time.time()
         for batch_idx, (images, _) in enumerate(tqdm(dataloader)):
             images = images.to(self.device)
-            features = self.extract_features(images, use_neighborhood_aggregation=False)
+            features = self.extract_features(images)
             all_features.append(features.cpu().numpy())
         total_time2 = time.time() - start_time2
         print(f"Extracted in {total_time2:.2f} seconds!")    
@@ -249,11 +322,10 @@ class PatchCore:
         
         print(f"Total features extracted: {all_features.shape}")
         
-        # Dimensionality reduction (optional for DINOv2)
-        # Only apply for very large models or if explicitly needed
-        if self.feature_dims > 1024 and all_features.shape[1] > 512:
+        # Dimensionality reduction (optional for combined features)
+        if all_features.shape[1] > 1024:
             print("Applying dimensionality reduction...")
-            self.projection = GaussianRandomProjection(n_components=512, random_state=42)
+            self.projection = GaussianRandomProjection(n_components=1024, random_state=42)
             all_features = self.projection.fit_transform(all_features)
         
         # Smart sampling strategy
@@ -467,12 +539,12 @@ class PatchCore:
         """Save model with all components"""
         torch.save({
             'memory_bank': self.memory_bank,
-            'model_state': self.model.state_dict(),
+            'wr_model_state': self.wr_model.state_dict(),
+            'dino_model_state': self.dino_model.state_dict(),
             'global_threshold': self.global_threshold,
             'projection': self.projection,
             'feature_map_size': self.feature_map_size,
-            'backbone_name': self.backbone_name,
-            'feature_dims': self.feature_dims
+            'combined_feature_dim': self.combined_feature_dim
         }, path)
         print(f"Model saved to: {path}")
     
@@ -480,21 +552,13 @@ class PatchCore:
         """Load model"""
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         
-        # Load the correct DINOv2 variant
-        backbone_name = checkpoint.get('backbone_name', 'dinov2_vitb14')
-        if backbone_name != self.backbone_name:
-            print(f"Loading different DINOv2 variant: {backbone_name}")
-            self.backbone_name = backbone_name
-            self.model = torch.hub.load('facebookresearch/dinov2', backbone_name)
-            self.model.to(self.device)
-            self.model.eval()
-            self.feature_dims = checkpoint.get('feature_dims', self.feature_dims)
-        
         self.memory_bank = checkpoint['memory_bank']
-        self.model.load_state_dict(checkpoint['model_state'])
+        self.wr_model.load_state_dict(checkpoint['wr_model_state'])
+        self.dino_model.load_state_dict(checkpoint['dino_model_state'])
         self.global_threshold = checkpoint['global_threshold']
         self.projection = checkpoint.get('projection', None)
         self.feature_map_size = checkpoint.get('feature_map_size', None)
+        self.combined_feature_dim = checkpoint.get('combined_feature_dim', self.combined_feature_dim)
 
         # Re-build FAISS-Index if available
         if self.memory_bank is not None and FAISS_AVAILABLE:

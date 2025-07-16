@@ -1,6 +1,7 @@
 *.pth
 *.pt
 *.pkl
+*.ckpt
 *.h5
 *.weights
 *.onnx

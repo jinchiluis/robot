@@ -197,7 +197,7 @@ class MVTecBenchmark:
         if model_type == "ResNet":
             model = PatchCoreResNet(backbone='wide_resnet50_2')
         else:  # DINOv2
-            model = PatchCoreDINO(backbone='dinov2_vitb14')
+            model = PatchCoreDINO(backbone='dinov2_vits14')
         
         # Clear GPU cache
         if torch.cuda.is_available():
