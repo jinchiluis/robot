@@ -46,7 +46,7 @@ class PatchCore:
         self._setup_wideresnet()
         
         # Initialize DINOv2
-        print("Loading DINOv2 vits14...")
+        print("Loading DINOv2 vitb14...")
         self.dino_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
         self.dino_model.to(self.device)
         self.dino_model.eval()

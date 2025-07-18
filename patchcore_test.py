@@ -86,7 +86,7 @@ class MVTecBenchmark:
         print(f"Found {len(objects)} objects: {', '.join(sorted(objects))}")
         return sorted(objects)
     
-    def split_training_data(self, train_dir, split_ratio=0.99):
+    def split_training_data(self, train_dir, split_ratio=0.8):
         """Split training data into train and validation sets"""
         train_path = Path(train_dir)
         
