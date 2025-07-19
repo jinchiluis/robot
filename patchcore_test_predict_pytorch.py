@@ -11,13 +11,6 @@ from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
-try:
-    import faiss
-    FAISS_AVAILABLE = True
-except ImportError:
-    FAISS_AVAILABLE = False
-    print("Warning: FAISS not available, falling back to scipy (slower)")
-
 from patchcore_dino import PatchCore as PatchCoreDINO
 
 
@@ -29,104 +22,103 @@ def find_highest_peak(distances, bins=50):
     return mode_value
 
 
-def compute_pairwise_distances_faiss(memory_bank):
-    """Compute distance statistics using FAISS - ALL points, no sampling, no memory issues!"""
+def compute_pairwise_distances_torch_gpu(memory_bank):
+    """Compute distance statistics using PyTorch on GPU - no k limitations!"""
     n_features = len(memory_bank)
     
-    if FAISS_AVAILABLE:
-        # Create CPU FAISS index
-        dimension = memory_bank.shape[1]
-        index = faiss.IndexFlatL2(dimension)
-        
-        # Add ALL vectors to index
-        index.add(memory_bank.astype(np.float32))
-        
-        # Use all neighbors
-        k = n_features
-        
-        print(f"  Computing distance statistics for {n_features} points using CPU FAISS...")
-        
-        # Initialize statistics
-        distance_samples = []  # For histogram computation
-        distance_sum = 0.0
-        distance_sum_sq = 0.0
-        n_distances = 0
-        min_dist = float('inf')
-        max_dist = float('-inf')
-        
-        # Process in batches
-        batch_size = 500
-        
-        for i in tqdm(range(0, n_features, batch_size), desc="FAISS batches"):
-            end_idx = min(i + batch_size, n_features)
-            batch = memory_bank[i:end_idx]
-            distances, _ = index.search(batch.astype(np.float32), k)
-            
-            # Skip first column (self-distance = 0)
-            distances = distances[:, 1:]
-            
-            # Convert squared distances to regular distances
-            distances = np.sqrt(distances)
-            
-            # Update running statistics
-            batch_distances = distances.flatten()
-            distance_sum += np.sum(batch_distances)
-            distance_sum_sq += np.sum(batch_distances ** 2)
-            n_distances += len(batch_distances)
-            
-            # Update min/max
-            batch_min = np.min(batch_distances)
-            batch_max = np.max(batch_distances)
-            min_dist = min(min_dist, batch_min)
-            max_dist = max(max_dist, batch_max)
-            
-            # Keep a sample for histogram (for finding mode)
-            # We don't need ALL distances for histogram, just a good sample
-            if len(distance_samples) < 1_000_000:  # Keep max 1M distances for histogram
-                sample_size = min(len(batch_distances), 1_000_000 - len(distance_samples))
-                if sample_size > 0:
-                    # Take evenly spaced samples instead of random for better coverage
-                    indices = np.linspace(0, len(batch_distances)-1, sample_size, dtype=int)
-                    sampled = batch_distances[indices]
-                    distance_samples.extend(sampled)
-        
-        # Calculate final statistics
-        mean_dist = distance_sum / n_distances
-        variance = (distance_sum_sq / n_distances) - (mean_dist ** 2)
-        std_dist = np.sqrt(variance)
-        
-        # Convert samples to array for histogram
-        distance_samples = np.array(distance_samples)
-        
-        print(f"  Processed {n_distances:,} distances using incremental statistics")
-        print(f"  Mean: {mean_dist:.4f}, Std: {std_dist:.4f}, Min: {min_dist:.4f}, Max: {max_dist:.4f}")
-        print(f"  Histogram sample size: {len(distance_samples):,}")
-        
-        # Return samples and computed statistics
-        return distance_samples, mean_dist, std_dist, min_dist, max_dist
-        
+    # Convert to torch tensor
+    if torch.cuda.is_available():
+        memory_torch = torch.from_numpy(memory_bank).float().cuda()
+        device = 'cuda'
     else:
-        # Fallback to scipy only for small datasets
-        if n_features > 5000:
-            print(f"  WARNING: {n_features} points is too large for scipy! Install FAISS!")
-            # Force sampling for scipy
-            indices = np.random.choice(n_features, 5000, replace=False)
-            sampled_bank = memory_bank[indices]
+        memory_torch = torch.from_numpy(memory_bank).float()
+        device = 'cpu'
+    
+    print(f"  Computing distance statistics for {n_features} points using PyTorch {device.upper()}...")
+    
+    # Initialize statistics
+    distance_samples = []  # For histogram computation
+    distance_sum = 0.0
+    distance_sum_sq = 0.0
+    n_distances = 0
+    min_dist = float('inf')
+    max_dist = float('-inf')
+    
+    # Batch size based on available memory
+    if device == 'cuda':
+        # Estimate safe batch size based on memory bank size and GPU memory
+        # Rough estimate: each distance matrix element takes 4 bytes (float32)
+        # We need batch_size × n_features × 4 bytes
+        # Use conservative estimate to avoid OOM
+        if n_features > 30000:
+            batch_size = 5000
+        elif n_features > 20000:
+            batch_size = 8000
         else:
-            sampled_bank = memory_bank
+            batch_size = 10000
+    else:
+        batch_size = 2000  # Smaller for CPU
+    
+    # Process in batches
+    total_batches = (n_features + batch_size - 1) // batch_size
+    with tqdm(total=total_batches * (total_batches + 1) // 2, desc="Distance computation") as pbar:
+        for i in range(0, n_features, batch_size):
+            batch1 = memory_torch[i:min(i+batch_size, n_features)]
             
-        from sklearn.metrics import pairwise_distances
-        print(f"  Computing pairwise distances with scipy (slower)...")
-        distances = pairwise_distances(sampled_bank)
-        upper_tri = distances[np.triu_indices_from(distances, k=1)]
-        
-        mean_dist = np.mean(upper_tri)
-        std_dist = np.std(upper_tri)
-        min_dist = np.min(upper_tri)
-        max_dist = np.max(upper_tri)
-        
-        return upper_tri, mean_dist, std_dist, min_dist, max_dist
-
+            for j in range(i, n_features, batch_size):  # Start from i to avoid duplicates
+                batch2 = memory_torch[j:min(j+batch_size, n_features)]
+                
+                # Compute batch1 × batch2 distances
+                distances = torch.cdist(batch1, batch2)
+                
+                # If same batch, only take upper triangular (excluding diagonal)
+                if i == j:
+                    mask = torch.triu(torch.ones_like(distances), diagonal=1).bool()
+                    batch_distances = distances[mask]
+                else:
+                    batch_distances = distances.flatten()
+                
+                if len(batch_distances) > 0:
+                    # Update statistics
+                    distance_sum += batch_distances.sum().item()
+                    distance_sum_sq += (batch_distances ** 2).sum().item()
+                    n_distances += len(batch_distances)
+                    
+                    # Update min/max
+                    batch_min = batch_distances.min().item()
+                    batch_max = batch_distances.max().item()
+                    min_dist = min(min_dist, batch_min)
+                    max_dist = max(max_dist, batch_max)
+                    
+                    # Keep samples for histogram
+                    if len(distance_samples) < 1_000_000:
+                        sample_size = min(1000, len(batch_distances), 1_000_000 - len(distance_samples))
+                        if sample_size > 0:
+                            # Take evenly spaced samples
+                            indices = torch.linspace(0, len(batch_distances)-1, sample_size, dtype=torch.long, device=device)
+                            sampled = batch_distances[indices].cpu().numpy()
+                            distance_samples.extend(sampled)
+                
+                pbar.update(1)
+    
+    # Clear GPU memory
+    if device == 'cuda':
+        del memory_torch
+        torch.cuda.empty_cache()
+    
+    # Calculate final statistics
+    mean_dist = distance_sum / n_distances
+    variance = (distance_sum_sq / n_distances) - (mean_dist ** 2)
+    std_dist = np.sqrt(variance)
+    
+    # Convert samples to array
+    distance_samples = np.array(distance_samples)
+    
+    print(f"  Processed {n_distances:,} distances using PyTorch {device.upper()}")
+    print(f"  Mean: {mean_dist:.4f}, Std: {std_dist:.4f}, Min: {min_dist:.4f}, Max: {max_dist:.4f}")
+    print(f"  Histogram sample size: {len(distance_samples):,}")
+    
+    return distance_samples, mean_dist, std_dist, min_dist, max_dist
 
 def compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, max_dist):
     """Compute confusion scores with different normalizations"""
@@ -229,8 +221,8 @@ class NormalizationTester:
         
         print(f"  Memory bank size: {memory_bank.shape}")
         
-        # Use FAISS for fast distance computation - NO SAMPLING!
-        distance_samples, mean_dist, std_dist, min_dist, max_dist = compute_pairwise_distances_faiss(memory_bank)
+        # Use PyTorch GPU for fast distance computation - NO SAMPLING, NO LIMITS!
+        distance_samples, mean_dist, std_dist, min_dist, max_dist = compute_pairwise_distances_torch_gpu(memory_bank)
         
         # Compute all confusion scores
         scores = compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, max_dist)
@@ -280,7 +272,7 @@ class NormalizationTester:
         results = {}
         
         print(f"Found {len(objects)} objects to analyze")
-        print(f"Using {'FAISS' if FAISS_AVAILABLE else 'scipy'} for distance calculations")
+        print(f"Using PyTorch {'GPU' if torch.cuda.is_available() else 'CPU'} for distance calculations")
         
         for obj in tqdm(objects, desc="Analyzing objects"):
             obj_results = self.analyze_object(obj)
@@ -527,7 +519,7 @@ class NormalizationTester:
             "Summary",
             "-" * 40,
             f"Objects analyzed: {len(results)}",
-            f"Using: {'FAISS (GPU)' if (FAISS_AVAILABLE and torch.cuda.is_available()) else 'FAISS (CPU)' if FAISS_AVAILABLE else 'scipy'} for distance calculations",
+            f"Using: PyTorch {'GPU' if torch.cuda.is_available() else 'CPU'} for distance calculations",
             "",
             "Correlation with AUROC:",
             f"  - Normalized by STD:          {corr_std:.3f}",
@@ -649,6 +641,7 @@ class NormalizationTester:
         
         print(f"\nReport saved to: {self.output_dir / 'normalization_comparison_report.txt'}")
         print(f"\nKey Finding: {best_method} shows strongest correlation ({best_corr:.3f})")
+
 
 def main():
     import argparse
