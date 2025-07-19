@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Compare different normalization methods for confusion score"""
+"""Compare different normalization methods for confusion score - Optimized with FAISS"""
 import torch
 import numpy as np
 from pathlib import Path
 import json
 import matplotlib.pyplot as plt
-from sklearn.metrics import roc_auc_score, pairwise_distances
+from sklearn.metrics import roc_auc_score
 from scipy import stats
 from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
+
+try:
+    import faiss
+    FAISS_AVAILABLE = True
+except ImportError:
+    FAISS_AVAILABLE = False
+    print("Warning: FAISS not available, falling back to scipy (slower)")
 
 from patchcore_dino import PatchCore as PatchCoreDINO
 
@@ -20,6 +27,63 @@ def find_highest_peak(distances, bins=50):
     max_bin_idx = np.argmax(hist)
     mode_value = (bin_edges[max_bin_idx] + bin_edges[max_bin_idx + 1]) / 2
     return mode_value
+
+
+def compute_pairwise_distances_faiss(memory_bank):
+    """Compute pairwise distances using FAISS for speed - NO SAMPLING!"""
+    n_features = len(memory_bank)
+    
+    if FAISS_AVAILABLE:
+        # Create CPU FAISS index
+        dimension = memory_bank.shape[1]
+        index = faiss.IndexFlatL2(dimension)
+        
+        # Add ALL vectors to index
+        index.add(memory_bank.astype(np.float32))
+        
+        # Use all neighbors
+        k = n_features
+        
+        print(f"  Computing distances for {n_features} points using CPU FAISS (k={k})...")
+        
+        # Process in batches to avoid memory issues
+        batch_size = 500
+        all_distances = []
+        
+        for i in tqdm(range(0, n_features, batch_size), desc="FAISS batches"):
+            end_idx = min(i + batch_size, n_features)
+            batch = memory_bank[i:end_idx]
+            distances, _ = index.search(batch.astype(np.float32), k)
+            # Skip first column (self-distance = 0)
+            all_distances.append(distances[:, 1:])
+        
+        # Concatenate all distances
+        all_distances = np.concatenate(all_distances, axis=0)
+        
+        # Flatten to get all pairwise distances
+        upper_tri = all_distances.flatten()
+        
+        # Convert squared distances to regular distances
+        upper_tri = np.sqrt(upper_tri)
+        
+        print(f"  Computed {len(upper_tri):,} distances using CPU FAISS")
+        
+    else:
+        # Fallback to scipy only for small datasets
+        if n_features > 5000:
+            print(f"  WARNING: {n_features} points is too large for scipy! Install FAISS!")
+            # Force sampling for scipy
+            indices = np.random.choice(n_features, 5000, replace=False)
+            sampled_bank = memory_bank[indices]
+        else:
+            sampled_bank = memory_bank
+            
+        from sklearn.metrics import pairwise_distances
+        print(f"  Computing pairwise distances with scipy (slower)...")
+        distances = pairwise_distances(sampled_bank)
+        upper_tri = distances[np.triu_indices_from(distances, k=1)]
+    
+    return upper_tri
 
 
 def compute_confusion_scores(distances):
@@ -79,40 +143,6 @@ def compute_confusion_scores(distances):
         'confusion_mean_with_position': confusion_mean_with_position
     }
 
-def compute_confusion_scores_batched(memory_bank, batch_size=5000):
-    """Compute confusion scores with batched distance calculation"""
-    n_samples = len(memory_bank)
-    
-    # Collect distances in batches instead of all at once
-    all_distances = []
-    
-    for i in range(0, n_samples, batch_size):
-        end_i = min(i + batch_size, n_samples)
-        batch_i = memory_bank[i:end_i]
-        
-        # Compute distances from this batch to all subsequent points
-        for j in range(i, n_samples, batch_size):
-            end_j = min(j + batch_size, n_samples)
-            batch_j = memory_bank[j:end_j]
-            
-            # Compute pairwise distances between batches
-            dist_batch = pairwise_distances(batch_i, batch_j)
-            
-            # Extract upper triangular part (avoid duplicates)
-            if i == j:
-                # Same batch - get upper triangle
-                upper_tri = dist_batch[np.triu_indices_from(dist_batch, k=1)]
-            else:
-                # Different batches - take all distances
-                upper_tri = dist_batch.flatten()
-            
-            all_distances.extend(upper_tri)
-    
-    # Convert to numpy array
-    distances = np.array(all_distances)
-    
-    # Now compute confusion scores as before
-    return compute_confusion_scores(distances)
 
 class NormalizationTester:
     def __init__(self, mvtec_root, output_dir="normalization_comparison", sample_ratio=0.01):
@@ -158,28 +188,12 @@ class NormalizationTester:
         if isinstance(memory_bank, torch.Tensor):
             memory_bank = memory_bank.cpu().numpy()
         
-        # Handle large memory banks with batching
-        if len(memory_bank) > 10000:
-            # For very large banks, still sample but take more points
-            max_samples = min(100000, len(memory_bank))
-            if len(memory_bank) > max_samples:
-                indices = np.random.choice(len(memory_bank), max_samples, replace=False)
-                sampled_bank = memory_bank[indices]
-            else:
-                sampled_bank = memory_bank
-            
-            # Use batched computation
-            scores = compute_confusion_scores_batched(sampled_bank, batch_size=5000)
-        else:
-            # Small enough to compute directly
-            if len(memory_bank) > 10000:
-                indices = np.random.choice(len(memory_bank), 10000, replace=False)
-                sampled_bank = memory_bank[indices]
-            else:
-                sampled_bank = memory_bank
-            
-        distances = pairwise_distances(sampled_bank)
-        upper_tri = distances[np.triu_indices_from(distances, k=1)]
+        print(f"  Memory bank size: {memory_bank.shape}")
+        
+        # Use FAISS for fast distance computation - NO SAMPLING!
+        upper_tri = compute_pairwise_distances_faiss(memory_bank)
+        
+        # Compute all confusion scores
         scores = compute_confusion_scores(upper_tri)
         
         # Evaluate AUROC
@@ -227,6 +241,7 @@ class NormalizationTester:
         results = {}
         
         print(f"Found {len(objects)} objects to analyze")
+        print(f"Using {'FAISS' if FAISS_AVAILABLE else 'scipy'} for distance calculations")
         
         for obj in tqdm(objects, desc="Analyzing objects"):
             obj_results = self.analyze_object(obj)
@@ -234,17 +249,17 @@ class NormalizationTester:
                 results[obj] = obj_results
                 print(f"  {obj}: AUROC={obj_results['auroc']:.3f}")
                 # Print confusion score details after each run
-                print("Confusion Score Details:")
-                print(f"  mode: {obj_results['mode']}")
-                print(f"  mean: {obj_results['mean']}")
-                print(f"  std: {obj_results['std']}")
-                print(f"  mode_mean_diff: {obj_results['mode_mean_diff']}")
-                print(f"  confusion_by_std: {obj_results['confusion_by_std']}")
-                print(f"  confusion_by_mean: {obj_results['confusion_by_mean']}")
-                print(f"  mean_position: {obj_results['mean_position']}")
-                print(f"  position_confusion: {obj_results['position_confusion']}")
-                print(f"  confusion_std_with_position: {obj_results['confusion_std_with_position']}")
-                print(f"  confusion_mean_with_position: {obj_results['confusion_mean_with_position']}")
+                print("  Confusion Score Details:")
+                print(f"    mode: {obj_results['mode']:.4f}")
+                print(f"    mean: {obj_results['mean']:.4f}")
+                print(f"    std: {obj_results['std']:.4f}")
+                print(f"    mode_mean_diff: {obj_results['mode_mean_diff']:.4f}")
+                print(f"    confusion_by_std: {obj_results['confusion_by_std']:.4f}")
+                print(f"    confusion_by_mean: {obj_results['confusion_by_mean']:.4f}")
+                print(f"    mean_position: {obj_results['mean_position']:.4f}")
+                print(f"    position_confusion: {obj_results['position_confusion']:.4f}")
+                print(f"    confusion_std_with_position: {obj_results['confusion_std_with_position']:.4f}")
+                print(f"    confusion_mean_with_position: {obj_results['confusion_mean_with_position']:.4f}")
         
         # Save raw results - convert numpy types to Python native types
         save_results = {}
@@ -473,6 +488,7 @@ class NormalizationTester:
             "Summary",
             "-" * 40,
             f"Objects analyzed: {len(results)}",
+            f"Using: {'FAISS (GPU)' if (FAISS_AVAILABLE and torch.cuda.is_available()) else 'FAISS (CPU)' if FAISS_AVAILABLE else 'scipy'} for distance calculations",
             "",
             "Correlation with AUROC:",
             f"  - Normalized by STD:          {corr_std:.3f}",
@@ -595,7 +611,6 @@ class NormalizationTester:
         print(f"\nReport saved to: {self.output_dir / 'normalization_comparison_report.txt'}")
         print(f"\nKey Finding: {best_method} shows strongest correlation ({best_corr:.3f})")
 
-
 def main():
     import argparse
     
@@ -629,3 +644,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    

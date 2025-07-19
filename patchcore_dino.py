@@ -280,10 +280,10 @@ class PatchCore:
         validation_dir = val_dir if val_dir is not None else train_dir
         if val_dir is not None:
             print(f"Using separate validation directory: {val_dir}")
+            self.calculate_threshold_validation(validation_dir, percentile=threshold_percentile)
         else:
-            print("Warning: Using training directory for validation")
-            
-        self.calculate_threshold_validation(validation_dir, percentile=threshold_percentile)
+            print("Warning: Set useless threshold 1")
+            self.global_threshold = 1        
         
         total_time = time.time() - start_time
         print(f"Training complete in {total_time:.2f} seconds!")
