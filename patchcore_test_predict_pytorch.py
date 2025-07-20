@@ -7,6 +7,7 @@ import json
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score
 from scipy import stats
+from scipy.stats import gaussian_kde
 from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
@@ -16,9 +17,22 @@ from patchcore_dino import PatchCore as PatchCoreDINO
 
 def find_highest_peak(distances, bins=50):
     """Find the mode (highest peak) in distance distribution"""
-    hist, bin_edges = np.histogram(distances, bins=bins)
-    max_bin_idx = np.argmax(hist)
-    mode_value = (bin_edges[max_bin_idx] + bin_edges[max_bin_idx + 1]) / 2
+    # Use KDE for more accurate mode finding
+    from scipy.stats import gaussian_kde
+    
+    kde = gaussian_kde(distances, bw_method='scott')
+    
+    # Create fine grid of points
+    x_min, x_max = distances.min(), distances.max()
+    x_grid = np.linspace(x_min, x_max, 1000)
+    
+    # Evaluate KDE on grid
+    kde_values = kde(x_grid)
+    
+    # Find maximum
+    max_idx = np.argmax(kde_values)
+    mode_value = x_grid[max_idx]
+    
     return mode_value
 
 
@@ -120,6 +134,7 @@ def compute_pairwise_distances_torch_gpu(memory_bank):
     
     return distance_samples, mean_dist, std_dist, min_dist, max_dist
 
+
 def compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, max_dist):
     """Compute confusion scores with different normalizations"""
     # Find mode from samples
@@ -128,20 +143,13 @@ def compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, ma
     # Raw difference
     mode_mean_diff = mode_dist - mean_dist
     
-    # Method 1: Normalize by standard deviation
-    if std_dist > 0:
-        confusion_by_std = mode_mean_diff / std_dist
-    else:
-        confusion_by_std = 0
-    
-    # Method 2: Normalize by mean
+    # Method 1: Normalize by mean
     if mean_dist > 0:
         confusion_by_mean = mode_mean_diff / mean_dist
     else:
         confusion_by_mean = 0
     
     # Only positive values (mode > mean indicates confusion)
-    confusion_by_std = max(0, confusion_by_std)
     confusion_by_mean = max(0, confusion_by_mean)
     
     # Calculate mean position in distribution
@@ -154,25 +162,78 @@ def compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, ma
         mean_position = 0.5
     
     # Position confusion: how far mean is from center (0.5)
-    # Higher score when mean is shifted right
     position_confusion = max(0, mean_position - 0.5) * 2  # Scale to 0-1
     
-    # Combined scores (50/50 weighting)
-    confusion_std_with_position = 0.5 * confusion_by_std + 0.5 * position_confusion
-    confusion_mean_with_position = 0.5 * confusion_by_mean + 0.5 * position_confusion
+    # Density gap confusion (only if mode > mean)
+    density_gap_confusion = 0
+    if mode_dist > mean_dist:
+        kde = gaussian_kde(distance_samples, bw_method='scott')
+        
+        density_at_mean = kde(mean_dist)[0]
+        density_at_mode = kde(mode_dist)[0]
+        
+        if density_at_mode > 0:
+            density_gap_confusion = 1 - (density_at_mean / density_at_mode)
+        density_gap_confusion = max(0, density_gap_confusion)
+    
+    # Combined score with 3 components (equal weighting)
+    confusion_combined = (confusion_by_mean + position_confusion + density_gap_confusion) / 3
     
     return {
         'mode': mode_dist,
         'mean': mean_dist,
         'std': std_dist,
         'mode_mean_diff': mode_mean_diff,
-        'confusion_by_std': confusion_by_std,
         'confusion_by_mean': confusion_by_mean,
         'mean_position': mean_position,
         'position_confusion': position_confusion,
-        'confusion_std_with_position': confusion_std_with_position,
-        'confusion_mean_with_position': confusion_mean_with_position
+        'density_gap_confusion': density_gap_confusion,
+        'confusion_combined': confusion_combined
     }
+
+
+def plot_distance_distribution(distance_samples, scores, object_name, output_dir, auroc=None):
+    """Plot distance distribution with Gaussian fit - isolated visualization function"""
+    plt.figure(figsize=(10, 6))
+    
+    # Create histogram
+    n, bins, patches = plt.hist(distance_samples, bins=100, density=True, alpha=0.6, 
+                                color='blue', edgecolor='black', linewidth=0.5)
+    
+    # Fit and plot Gaussian
+    mean, std = scores['mean'], scores['std']
+    x = np.linspace(distance_samples.min(), distance_samples.max(), 1000)
+    gaussian = (1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean)/std)**2)
+    plt.plot(x, gaussian, 'r-', linewidth=2, label=f'Gaussian fit (μ={mean:.3f}, σ={std:.3f})')
+    
+    # Add KDE for density gap visualization
+    kde = gaussian_kde(distance_samples, bw_method='scott')
+    kde_values = kde(x)
+    plt.plot(x, kde_values, 'g-', linewidth=1.5, alpha=0.7, label='KDE')
+    
+    # Add vertical lines
+    plt.axvline(mean, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean:.3f}')
+    plt.axvline(scores['mode'], color='green', linestyle='--', linewidth=2, label=f'Mode: {scores["mode"]:.3f}')
+    
+    # Highlight confusion region if mode > mean
+    if scores['mode'] > mean:
+        plt.axvspan(mean, scores['mode'], alpha=0.2, color='orange', label='Confusion region')
+    
+    # Labels and formatting
+    plt.xlabel('Distance', fontsize=12)
+    plt.ylabel('Density', fontsize=12)
+    
+    auroc_str = f'{auroc:.3f}' if auroc is not None else 'N/A'
+    plt.title(f'{object_name} - NN Distance Distribution\n' + 
+              f'Combined Confusion Score: {scores["confusion_combined"]:.3f}, ' +
+              f'AUROC: {auroc_str}', fontsize=14)
+    plt.legend(loc='best')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    
+    # Save
+    plt.savefig(output_dir / f'{object_name}_distance_distribution.png', dpi=150)
+    plt.close()
 
 
 class NormalizationTester:
@@ -198,44 +259,7 @@ class NormalizationTester:
                 if train_path.exists() and test_path.exists():
                     objects.append(item.name)
         return sorted(objects)
-
-    def plot_distance_distribution(self,distance_samples, scores, object_name, output_dir):
-        """Plot distance distribution with Gaussian fit - isolated visualization function"""
-        plt.figure(figsize=(10, 6))
-        
-        # Create histogram
-        n, bins, patches = plt.hist(distance_samples, bins=100, density=True, alpha=0.6, 
-                                    color='blue', edgecolor='black', linewidth=0.5)
-        
-        # Fit and plot Gaussian
-        mean, std = scores['mean'], scores['std']
-        x = np.linspace(distance_samples.min(), distance_samples.max(), 1000)
-        gaussian = (1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean)/std)**2)
-        plt.plot(x, gaussian, 'r-', linewidth=2, label=f'Gaussian fit (μ={mean:.3f}, σ={std:.3f})')
-        
-        # Add vertical lines
-        plt.axvline(mean, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean:.3f}')
-        plt.axvline(scores['mode'], color='green', linestyle='--', linewidth=2, label=f'Mode: {scores["mode"]:.3f}')
-        
-        # Highlight confusion region if mode > mean
-        if scores['mode'] > mean:
-            plt.axvspan(mean, scores['mode'], alpha=0.2, color='orange', label='Confusion region')
-        
-        # Labels and formatting
-        plt.xlabel('Distance', fontsize=12)
-        plt.ylabel('Density', fontsize=12)
-        plt.title(f'{object_name} - NN Distance Distribution\n' + 
-                f'Confusion Score (STD): {scores["confusion_by_std"]:.3f}, ' +
-                f'AUROC: {scores.get("auroc", "N/A")}', fontsize=14)
-        plt.legend(loc='best')
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        
-        # Save
-        print(f"Saving distance distribution plot for {object_name}...")
-        plt.savefig(output_dir / f'{object_name}_distance_distribution.png', dpi=150)
-        plt.close()
-        
+    
     def analyze_object(self, object_name):
         """Analyze a single object"""
         print(f"\nAnalyzing {object_name}...")
@@ -263,11 +287,13 @@ class NormalizationTester:
         
         # Compute all confusion scores
         scores = compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, max_dist)
-        print("Start plot")
-        self.plot_distance_distribution(distance_samples, scores, object_name, self.output_dir)
+        
         # Evaluate AUROC
         test_dir = self.mvtec_root / object_name / "test"
         auroc = self.evaluate_model(model, test_dir)
+        
+        # Plot distribution
+        plot_distance_distribution(distance_samples, scores, object_name, self.output_dir, auroc)
         
         # Clean up
         del model
@@ -323,12 +349,11 @@ class NormalizationTester:
                 print(f"    mean: {obj_results['mean']:.4f}")
                 print(f"    std: {obj_results['std']:.4f}")
                 print(f"    mode_mean_diff: {obj_results['mode_mean_diff']:.4f}")
-                print(f"    confusion_by_std: {obj_results['confusion_by_std']:.4f}")
                 print(f"    confusion_by_mean: {obj_results['confusion_by_mean']:.4f}")
                 print(f"    mean_position: {obj_results['mean_position']:.4f}")
                 print(f"    position_confusion: {obj_results['position_confusion']:.4f}")
-                print(f"    confusion_std_with_position: {obj_results['confusion_std_with_position']:.4f}")
-                print(f"    confusion_mean_with_position: {obj_results['confusion_mean_with_position']:.4f}")
+                print(f"    density_gap_confusion: {obj_results['density_gap_confusion']:.4f}")
+                print(f"    confusion_combined: {obj_results['confusion_combined']:.4f}")
         
         # Save raw results - convert numpy types to Python native types
         save_results = {}
@@ -358,54 +383,38 @@ class NormalizationTester:
         """Create comprehensive comparison visualizations"""
         # Extract data
         aurocs = []
-        confusion_by_std = []
         confusion_by_mean = []
         position_confusion = []
-        confusion_std_with_position = []
-        confusion_mean_with_position = []
+        density_gap_confusion = []
+        confusion_combined = []
         mode_mean_diff = []
         mean_positions = []
         labels = []
         
         for obj, res in results.items():
             aurocs.append(res['auroc'])
-            confusion_by_std.append(res['confusion_by_std'])
             confusion_by_mean.append(res['confusion_by_mean'])
             position_confusion.append(res['position_confusion'])
-            confusion_std_with_position.append(res['confusion_std_with_position'])
-            confusion_mean_with_position.append(res['confusion_mean_with_position'])
+            density_gap_confusion.append(res['density_gap_confusion'])
+            confusion_combined.append(res['confusion_combined'])
             mode_mean_diff.append(res['mode_mean_diff'])
             mean_positions.append(res['mean_position'])
             labels.append(obj)
         
         # Convert to numpy arrays
         aurocs = np.array(aurocs)
-        confusion_by_std = np.array(confusion_by_std)
         confusion_by_mean = np.array(confusion_by_mean)
         position_confusion = np.array(position_confusion)
-        confusion_std_with_position = np.array(confusion_std_with_position)
-        confusion_mean_with_position = np.array(confusion_mean_with_position)
+        density_gap_confusion = np.array(density_gap_confusion)
+        confusion_combined = np.array(confusion_combined)
         mode_mean_diff = np.array(mode_mean_diff)
         mean_positions = np.array(mean_positions)
         
         # 1. Main comparison plot - all methods
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
         
-        # Plot 1: Original STD normalization
+        # Plot 1: Mean normalization
         ax = axes[0, 0]
-        ax.scatter(confusion_by_std, aurocs, alpha=0.6, s=100, color='blue')
-        corr_std = np.corrcoef(confusion_by_std, aurocs)[0, 1]
-        z = np.polyfit(confusion_by_std, aurocs, 1)
-        p = np.poly1d(z)
-        x_line = np.linspace(confusion_by_std.min(), confusion_by_std.max(), 100)
-        ax.plot(x_line, p(x_line), "r--", alpha=0.8)
-        ax.set_xlabel('Confusion Score (by STD)', fontsize=12)
-        ax.set_ylabel('AUROC', fontsize=12)
-        ax.set_title(f'Normalized by STD\nCorrelation: {corr_std:.3f}', fontsize=14)
-        ax.grid(True, alpha=0.3)
-        
-        # Plot 2: Original Mean normalization
-        ax = axes[0, 1]
         ax.scatter(confusion_by_mean, aurocs, alpha=0.6, s=100, color='green')
         corr_mean = np.corrcoef(confusion_by_mean, aurocs)[0, 1]
         z = np.polyfit(confusion_by_mean, aurocs, 1)
@@ -417,8 +426,8 @@ class NormalizationTester:
         ax.set_title(f'Normalized by Mean\nCorrelation: {corr_mean:.3f}', fontsize=14)
         ax.grid(True, alpha=0.3)
         
-        # Plot 3: Position confusion alone
-        ax = axes[0, 2]
+        # Plot 2: Position confusion
+        ax = axes[0, 1]
         ax.scatter(position_confusion, aurocs, alpha=0.6, s=100, color='orange')
         corr_pos = np.corrcoef(position_confusion, aurocs)[0, 1]
         z = np.polyfit(position_confusion, aurocs, 1)
@@ -427,44 +436,34 @@ class NormalizationTester:
         ax.plot(x_line, p(x_line), "r--", alpha=0.8)
         ax.set_xlabel('Position Confusion', fontsize=12)
         ax.set_ylabel('AUROC', fontsize=12)
-        ax.set_title(f'Mean Position Only\nCorrelation: {corr_pos:.3f}', fontsize=14)
+        ax.set_title(f'Mean Position\nCorrelation: {corr_pos:.3f}', fontsize=14)
         ax.grid(True, alpha=0.3)
         
-        # Plot 4: STD + Position (50/50)
+        # Plot 3: Density gap confusion
         ax = axes[1, 0]
-        ax.scatter(confusion_std_with_position, aurocs, alpha=0.6, s=100, color='purple')
-        corr_std_pos = np.corrcoef(confusion_std_with_position, aurocs)[0, 1]
-        z = np.polyfit(confusion_std_with_position, aurocs, 1)
+        ax.scatter(density_gap_confusion, aurocs, alpha=0.6, s=100, color='purple')
+        corr_density = np.corrcoef(density_gap_confusion, aurocs)[0, 1]
+        z = np.polyfit(density_gap_confusion, aurocs, 1)
         p = np.poly1d(z)
-        x_line = np.linspace(confusion_std_with_position.min(), confusion_std_with_position.max(), 100)
+        x_line = np.linspace(density_gap_confusion.min(), density_gap_confusion.max(), 100)
         ax.plot(x_line, p(x_line), "r--", alpha=0.8)
-        ax.set_xlabel('Confusion Score (STD + Position)', fontsize=12)
+        ax.set_xlabel('Density Gap Confusion', fontsize=12)
         ax.set_ylabel('AUROC', fontsize=12)
-        ax.set_title(f'STD + Position (50/50)\nCorrelation: {corr_std_pos:.3f}', fontsize=14)
+        ax.set_title(f'Density Gap\nCorrelation: {corr_density:.3f}', fontsize=14)
         ax.grid(True, alpha=0.3)
         
-        # Plot 5: Mean + Position (50/50)
+        # Plot 4: Combined confusion score
         ax = axes[1, 1]
-        ax.scatter(confusion_mean_with_position, aurocs, alpha=0.6, s=100, color='brown')
-        corr_mean_pos = np.corrcoef(confusion_mean_with_position, aurocs)[0, 1]
-        z = np.polyfit(confusion_mean_with_position, aurocs, 1)
+        ax.scatter(confusion_combined, aurocs, alpha=0.6, s=100, color='red')
+        corr_combined = np.corrcoef(confusion_combined, aurocs)[0, 1]
+        z = np.polyfit(confusion_combined, aurocs, 1)
         p = np.poly1d(z)
-        x_line = np.linspace(confusion_mean_with_position.min(), confusion_mean_with_position.max(), 100)
+        x_line = np.linspace(confusion_combined.min(), confusion_combined.max(), 100)
         ax.plot(x_line, p(x_line), "r--", alpha=0.8)
-        ax.set_xlabel('Confusion Score (Mean + Position)', fontsize=12)
+        ax.set_xlabel('Combined Confusion Score', fontsize=12)
         ax.set_ylabel('AUROC', fontsize=12)
-        ax.set_title(f'Mean + Position (50/50)\nCorrelation: {corr_mean_pos:.3f}', fontsize=14)
+        ax.set_title(f'Combined (Mean + Position + Density Gap)\nCorrelation: {corr_combined:.3f}', fontsize=14)
         ax.grid(True, alpha=0.3)
-        
-        # Plot 6: Mean position visualization
-        ax = axes[1, 2]
-        ax.scatter(mean_positions, aurocs, alpha=0.6, s=100, color='teal')
-        ax.axvline(0.5, color='red', linestyle='--', alpha=0.5, label='Center')
-        ax.set_xlabel('Mean Position in Distribution', fontsize=12)
-        ax.set_ylabel('AUROC', fontsize=12)
-        ax.set_title('Mean Position vs Performance', fontsize=14)
-        ax.grid(True, alpha=0.3)
-        ax.set_xlim(0, 1)
         
         plt.suptitle('Confusion Score Methods Comparison', fontsize=16)
         plt.tight_layout()
@@ -474,9 +473,9 @@ class NormalizationTester:
         # 2. Correlation strength comparison
         fig, ax = plt.subplots(figsize=(12, 8))
         
-        methods = ['By STD', 'By Mean', 'Position Only', 'STD + Position', 'Mean + Position']
-        correlations = [corr_std, corr_mean, corr_pos, corr_std_pos, corr_mean_pos]
-        colors = ['blue', 'green', 'orange', 'purple', 'brown']
+        methods = ['By Mean', 'Position', 'Density Gap', 'Combined']
+        correlations = [corr_mean, corr_pos, corr_density, corr_combined]
+        colors = ['green', 'orange', 'purple', 'red']
         
         bars = ax.bar(methods, correlations, alpha=0.7, color=colors)
         
@@ -487,7 +486,7 @@ class NormalizationTester:
                    f'{corr:.3f}', ha='center', va='bottom', fontsize=12, fontweight='bold')
         
         ax.set_ylabel('Correlation with AUROC', fontsize=12)
-        ax.set_title('Correlation Strength Comparison - All Methods', fontsize=14)
+        ax.set_title('Correlation Strength Comparison', fontsize=14)
         ax.grid(True, alpha=0.3, axis='y')
         ax.set_ylim(min(correlations) - 0.1, 0)
         
@@ -497,31 +496,29 @@ class NormalizationTester:
         bars[best_idx].set_linewidth(3)
         
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'correlation_comparison_all_methods.png', dpi=300)
+        plt.savefig(self.output_dir / 'correlation_comparison.png', dpi=300)
         plt.close()
         
         # 3. Scatter matrix for detailed analysis
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         
-        # Components breakdown
-        axes[0, 0].scatter(confusion_by_std, position_confusion, alpha=0.6, c=aurocs, cmap='viridis')
-        axes[0, 0].set_xlabel('Mode-Mean Confusion (by STD)')
-        axes[0, 0].set_ylabel('Position Confusion')
+        # Components relationship
+        scatter = axes[0, 0].scatter(confusion_by_mean, density_gap_confusion, 
+                                    alpha=0.6, c=aurocs, cmap='viridis', s=100)
+        axes[0, 0].set_xlabel('Mode-Mean Confusion (by Mean)')
+        axes[0, 0].set_ylabel('Density Gap Confusion')
         axes[0, 0].set_title('Component Relationship (color = AUROC)')
         axes[0, 0].grid(True, alpha=0.3)
+        plt.colorbar(scatter, ax=axes[0, 0])
         
-        # Best two methods comparison
-        axes[0, 1].scatter(confusion_mean_with_position, confusion_std_with_position, alpha=0.6)
-        axes[0, 1].set_xlabel('Mean + Position')
-        axes[0, 1].set_ylabel('STD + Position')
-        axes[0, 1].set_title('Combined Methods Comparison')
+        # Mean position vs density gap
+        scatter = axes[0, 1].scatter(position_confusion, density_gap_confusion, 
+                                    alpha=0.6, c=aurocs, cmap='viridis', s=100)
+        axes[0, 1].set_xlabel('Position Confusion')
+        axes[0, 1].set_ylabel('Density Gap Confusion')
+        axes[0, 1].set_title('Position vs Density Gap (color = AUROC)')
         axes[0, 1].grid(True, alpha=0.3)
-        # Add diagonal line
-        lims = [
-            np.min([axes[0, 1].get_xlim(), axes[0, 1].get_ylim()]),
-            np.max([axes[0, 1].get_xlim(), axes[0, 1].get_ylim()]),
-        ]
-        axes[0, 1].plot(lims, lims, 'k--', alpha=0.5)
+        plt.colorbar(scatter, ax=axes[0, 1])
         
         # Mean position distribution
         axes[1, 0].hist(mean_positions, bins=20, alpha=0.7, color='teal')
@@ -532,13 +529,12 @@ class NormalizationTester:
         axes[1, 0].legend()
         axes[1, 0].grid(True, alpha=0.3, axis='y')
         
-        # Position confusion vs mode-mean difference
-        axes[1, 1].scatter(mode_mean_diff, position_confusion, alpha=0.6, c=aurocs, cmap='viridis')
-        axes[1, 1].set_xlabel('Mode - Mean (raw difference)')
-        axes[1, 1].set_ylabel('Position Confusion')
-        axes[1, 1].set_title('Raw Difference vs Position (color = AUROC)')
-        axes[1, 1].grid(True, alpha=0.3)
-        axes[1, 1].axvline(0, color='red', linestyle='--', alpha=0.5)
+        # Density gap distribution
+        axes[1, 1].hist(density_gap_confusion, bins=20, alpha=0.7, color='purple')
+        axes[1, 1].set_xlabel('Density Gap Confusion')
+        axes[1, 1].set_ylabel('Count')
+        axes[1, 1].set_title('Distribution of Density Gap Values')
+        axes[1, 1].grid(True, alpha=0.3, axis='y')
         
         plt.suptitle('Detailed Component Analysis', fontsize=14)
         plt.tight_layout()
@@ -546,9 +542,9 @@ class NormalizationTester:
         plt.close()
         
         # 4. Generate comparison report
-        self.generate_comparison_report(results, corr_std, corr_mean, corr_pos, corr_std_pos, corr_mean_pos)
+        self.generate_comparison_report(results, corr_mean, corr_pos, corr_density, corr_combined)
     
-    def generate_comparison_report(self, results, corr_std, corr_mean, corr_pos, corr_std_pos, corr_mean_pos):
+    def generate_comparison_report(self, results, corr_mean, corr_pos, corr_density, corr_combined):
         """Generate detailed comparison report"""
         report_lines = [
             "Confusion Score Normalization Comparison Report",
@@ -560,21 +556,19 @@ class NormalizationTester:
             f"Using: PyTorch {'GPU' if torch.cuda.is_available() else 'CPU'} for distance calculations",
             "",
             "Correlation with AUROC:",
-            f"  - Normalized by STD:          {corr_std:.3f}",
             f"  - Normalized by Mean:         {corr_mean:.3f}",
-            f"  - Position Confusion Only:    {corr_pos:.3f}",
-            f"  - STD + Position (50/50):     {corr_std_pos:.3f}",
-            f"  - Mean + Position (50/50):    {corr_mean_pos:.3f}",
+            f"  - Position Confusion:         {corr_pos:.3f}",
+            f"  - Density Gap Confusion:      {corr_density:.3f}",
+            f"  - Combined Score:             {corr_combined:.3f}",
             "",
         ]
         
         # Find best method
         all_corrs = {
-            'Normalized by STD': abs(corr_std),
             'Normalized by Mean': abs(corr_mean),
-            'Position Only': abs(corr_pos),
-            'STD + Position': abs(corr_std_pos),
-            'Mean + Position': abs(corr_mean_pos)
+            'Position Confusion': abs(corr_pos),
+            'Density Gap': abs(corr_density),
+            'Combined': abs(corr_combined)
         }
         best_method = max(all_corrs, key=all_corrs.get)
         best_corr = all_corrs[best_method]
@@ -582,10 +576,17 @@ class NormalizationTester:
         report_lines.extend([
             f"{'Best method:':<20} {best_method} (correlation: {best_corr:.3f})",
             "",
+            "Method Descriptions:",
+            "-" * 40,
+            "1. Normalized by Mean: (mode - mean) / mean when mode > mean",
+            "2. Position Confusion: How far mean is shifted right from center (0.5)",
+            "3. Density Gap: 1 - (density_at_mean / density_at_mode) when mode > mean",
+            "4. Combined: Equal average of all three metrics",
+            "",
             "Detailed Results",
             "-" * 40,
-            f"{'Object':<15} {'AUROC':<8} {'By STD':<10} {'By Mean':<10} {'Position':<10} {'STD+Pos':<10} {'Mean+Pos':<10}",
-            "-" * 80
+            f"{'Object':<15} {'AUROC':<8} {'By Mean':<10} {'Position':<10} {'Density Gap':<12} {'Combined':<10}",
+            "-" * 75
         ])
         
         # Sort by AUROC
@@ -593,9 +594,9 @@ class NormalizationTester:
         
         for obj, res in sorted_results:
             report_lines.append(
-                f"{obj:<15} {res['auroc']:<8.3f} {res['confusion_by_std']:<10.3f} "
-                f"{res['confusion_by_mean']:<10.3f} {res['position_confusion']:<10.3f} "
-                f"{res['confusion_std_with_position']:<10.3f} {res['confusion_mean_with_position']:<10.3f}"
+                f"{obj:<15} {res['auroc']:<8.3f} {res['confusion_by_mean']:<10.3f} "
+                f"{res['position_confusion']:<10.3f} {res['density_gap_confusion']:<12.3f} "
+                f"{res['confusion_combined']:<10.3f}"
             )
         
         # Add statistical analysis
@@ -606,14 +607,11 @@ class NormalizationTester:
         ])
         
         # Calculate R-squared values
-        aurocs = [r['auroc'] for r in results.values()]
-        
         r2_values = {
-            'By STD': corr_std ** 2,
             'By Mean': corr_mean ** 2,
-            'Position Only': corr_pos ** 2,
-            'STD + Position': corr_std_pos ** 2,
-            'Mean + Position': corr_mean_pos ** 2
+            'Position': corr_pos ** 2,
+            'Density Gap': corr_density ** 2,
+            'Combined': corr_combined ** 2
         }
         
         report_lines.extend([
@@ -644,6 +642,28 @@ class NormalizationTester:
         else:
             report_lines.append("  - None found")
         
+        # Density gap analysis
+        density_gaps = [r['density_gap_confusion'] for r in results.values()]
+        report_lines.extend([
+            "",
+            "Density Gap Analysis:",
+            f"  - Average gap:      {np.mean(density_gaps):.3f}",
+            f"  - Std deviation:    {np.std(density_gaps):.3f}",
+            f"  - Range:            [{min(density_gaps):.3f}, {max(density_gaps):.3f}]",
+            "",
+            "Objects with high density gap (>0.7):"
+        ])
+        
+        high_density_gaps = [(obj, res['density_gap_confusion'], res['auroc']) 
+                            for obj, res in results.items() 
+                            if res['density_gap_confusion'] > 0.7]
+        
+        if high_density_gaps:
+            for obj, gap, auroc in sorted(high_density_gaps, key=lambda x: x[1], reverse=True):
+                report_lines.append(f"  - {obj}: gap={gap:.3f}, AUROC={auroc:.3f}")
+        else:
+            report_lines.append("  - None found")
+        
         # Component contribution analysis
         report_lines.extend([
             "",
@@ -651,27 +671,65 @@ class NormalizationTester:
             "-" * 40
         ])
         
-        # Check if position improves predictions
-        improvement_std = abs(corr_std_pos) - abs(corr_std)
-        improvement_mean = abs(corr_mean_pos) - abs(corr_mean)
+        # Analyze which component is most predictive
+        component_importance = []
+        
+        # For each object, find which component has highest value
+        for obj, res in results.items():
+            components = {
+                'mean': res['confusion_by_mean'],
+                'position': res['position_confusion'],
+                'density': res['density_gap_confusion']
+            }
+            dominant = max(components, key=components.get)
+            component_importance.append(dominant)
+        
+        from collections import Counter
+        component_counts = Counter(component_importance)
         
         report_lines.extend([
-            f"Adding position confusion to STD:  {'+' if improvement_std > 0 else ''}{improvement_std:.3f} correlation change",
-            f"Adding position confusion to Mean: {'+' if improvement_mean > 0 else ''}{improvement_mean:.3f} correlation change",
+            "Dominant component per object:",
+            f"  - Mode-Mean confusion: {component_counts['mean']} objects",
+            f"  - Position confusion:  {component_counts['position']} objects",
+            f"  - Density gap:         {component_counts['density']} objects",
             "",
             "Recommendation:",
             "-" * 40
         ])
         
-        if best_method in ['STD + Position', 'Mean + Position']:
-            report_lines.append(
-                f"Use {best_method} confusion score, as the mean position significantly "
-                "improves prediction accuracy."
-            )
+        if best_method == 'Combined':
+            report_lines.extend([
+                f"Use the Combined confusion score for best overall performance.",
+                "This metric captures all three aspects of distribution problems:",
+                "  1. Mode-mean separation (normalized by mean)",
+                "  2. Mean position shift from center",
+                "  3. Density valley between mean and mode",
+                "",
+                "The combined approach is more robust than individual components."
+            ])
         else:
-            report_lines.append(
-                f"Use {best_method} confusion score for best AUROC prediction."
-            )
+            report_lines.extend([
+                f"Use {best_method} confusion score for best AUROC prediction.",
+                "However, consider using the Combined score for more robust results",
+                "across different object types."
+            ])
+        
+        # Add insights about problematic objects
+        report_lines.extend([
+            "",
+            "Problematic Objects (Combined Score > 0.5):",
+            "-" * 40
+        ])
+        
+        problematic = [(obj, res['confusion_combined'], res['auroc'])
+                        for obj, res in results.items()
+                        if res['confusion_combined'] > 0.5]
+        
+        if problematic:
+            for obj, score, auroc in sorted(problematic, key=lambda x: x[1], reverse=True):
+                report_lines.append(f"  - {obj}: score={score:.3f}, AUROC={auroc:.3f}")
+        else:
+            report_lines.append("  - None found (all objects have good feature distributions)")
         
         # Save report
         with open(self.output_dir / 'normalization_comparison_report.txt', 'w') as f:
@@ -686,11 +744,11 @@ def main():
     
     parser = argparse.ArgumentParser(description='Compare confusion score normalization methods')
     parser.add_argument('--mvtec-root', type=str, default='mvtec',
-                       help='Path to MVTec dataset root directory')
+                        help='Path to MVTec dataset root directory')
     parser.add_argument('--output-dir', type=str, default='normalization_comparison',
-                       help='Output directory for results')
+                        help='Output directory for results')
     parser.add_argument('--sample-ratio', type=float, default=0.01,
-                       help='Sample ratio for PatchCore memory bank')
+                        help='Sample ratio for PatchCore memory bank')
     
     args = parser.parse_args()
     
@@ -714,4 +772,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
