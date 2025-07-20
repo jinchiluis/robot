@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare different normalization methods for confusion score - Optimized with FAISS"""
+"""Compare different normalization methods for confusion score - Optimized with Pytorch"""
 import torch
 import numpy as np
 from pathlib import Path
@@ -198,7 +198,44 @@ class NormalizationTester:
                 if train_path.exists() and test_path.exists():
                     objects.append(item.name)
         return sorted(objects)
-    
+
+    def plot_distance_distribution(self,distance_samples, scores, object_name, output_dir):
+        """Plot distance distribution with Gaussian fit - isolated visualization function"""
+        plt.figure(figsize=(10, 6))
+        
+        # Create histogram
+        n, bins, patches = plt.hist(distance_samples, bins=100, density=True, alpha=0.6, 
+                                    color='blue', edgecolor='black', linewidth=0.5)
+        
+        # Fit and plot Gaussian
+        mean, std = scores['mean'], scores['std']
+        x = np.linspace(distance_samples.min(), distance_samples.max(), 1000)
+        gaussian = (1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean)/std)**2)
+        plt.plot(x, gaussian, 'r-', linewidth=2, label=f'Gaussian fit (μ={mean:.3f}, σ={std:.3f})')
+        
+        # Add vertical lines
+        plt.axvline(mean, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean:.3f}')
+        plt.axvline(scores['mode'], color='green', linestyle='--', linewidth=2, label=f'Mode: {scores["mode"]:.3f}')
+        
+        # Highlight confusion region if mode > mean
+        if scores['mode'] > mean:
+            plt.axvspan(mean, scores['mode'], alpha=0.2, color='orange', label='Confusion region')
+        
+        # Labels and formatting
+        plt.xlabel('Distance', fontsize=12)
+        plt.ylabel('Density', fontsize=12)
+        plt.title(f'{object_name} - NN Distance Distribution\n' + 
+                f'Confusion Score (STD): {scores["confusion_by_std"]:.3f}, ' +
+                f'AUROC: {scores.get("auroc", "N/A")}', fontsize=14)
+        plt.legend(loc='best')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        # Save
+        print(f"Saving distance distribution plot for {object_name}...")
+        plt.savefig(output_dir / f'{object_name}_distance_distribution.png', dpi=150)
+        plt.close()
+        
     def analyze_object(self, object_name):
         """Analyze a single object"""
         print(f"\nAnalyzing {object_name}...")
@@ -226,7 +263,8 @@ class NormalizationTester:
         
         # Compute all confusion scores
         scores = compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, max_dist)
-        
+        print("Start plot")
+        self.plot_distance_distribution(distance_samples, scores, object_name, self.output_dir)
         # Evaluate AUROC
         test_dir = self.mvtec_root / object_name / "test"
         auroc = self.evaluate_model(model, test_dir)
