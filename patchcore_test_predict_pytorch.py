@@ -15,29 +15,8 @@ warnings.filterwarnings('ignore')
 from patchcore_dino import PatchCore as PatchCoreDINO
 
 
-def find_highest_peak(distances, bins=50):
-    """Find the mode (highest peak) in distance distribution"""
-    # Use KDE for more accurate mode finding
-    from scipy.stats import gaussian_kde
-    
-    kde = gaussian_kde(distances, bw_method='scott')
-    
-    # Create fine grid of points
-    x_min, x_max = distances.min(), distances.max()
-    x_grid = np.linspace(x_min, x_max, 1000)
-    
-    # Evaluate KDE on grid
-    kde_values = kde(x_grid)
-    
-    # Find maximum
-    max_idx = np.argmax(kde_values)
-    mode_value = x_grid[max_idx]
-    
-    return mode_value
-
-
-def compute_pairwise_distances_torch_gpu(memory_bank):
-    """Compute distance statistics using PyTorch on GPU - no k limitations!"""
+def compute_pairwise_distances_torch_gpu(memory_bank, n_bins=1000):
+    """Compute distance statistics using PyTorch on GPU with exact histogram"""
     n_features = len(memory_bank)
     
     # Convert to torch tensor
@@ -50,8 +29,9 @@ def compute_pairwise_distances_torch_gpu(memory_bank):
     
     print(f"  Computing distance statistics for {n_features} points using PyTorch {device.upper()}...")
     
-    # Initialize statistics
-    distance_samples = []  # For histogram computation
+    # ========== FIRST PASS: Find min/max and compute statistics ==========
+    print("  First pass: Finding range and computing statistics...")
+    
     distance_sum = 0.0
     distance_sum_sq = 0.0
     n_distances = 0
@@ -60,10 +40,6 @@ def compute_pairwise_distances_torch_gpu(memory_bank):
     
     # Batch size based on available memory
     if device == 'cuda':
-        # Estimate safe batch size based on memory bank size and GPU memory
-        # Rough estimate: each distance matrix element takes 4 bytes (float32)
-        # We need batch_size × n_features × 4 bytes
-        # Use conservative estimate to avoid OOM
         if n_features > 30000:
             batch_size = 5000
         elif n_features > 20000:
@@ -71,21 +47,21 @@ def compute_pairwise_distances_torch_gpu(memory_bank):
         else:
             batch_size = 10000
     else:
-        batch_size = 2000  # Smaller for CPU
+        batch_size = 2000
     
-    # Process in batches
+    # First pass: get statistics and range
     total_batches = (n_features + batch_size - 1) // batch_size
-    with tqdm(total=total_batches * (total_batches + 1) // 2, desc="Distance computation") as pbar:
+    with tqdm(total=total_batches * (total_batches + 1) // 2, desc="First pass") as pbar:
         for i in range(0, n_features, batch_size):
             batch1 = memory_torch[i:min(i+batch_size, n_features)]
             
-            for j in range(i, n_features, batch_size):  # Start from i to avoid duplicates
+            for j in range(i, n_features, batch_size):
                 batch2 = memory_torch[j:min(j+batch_size, n_features)]
                 
-                # Compute batch1 × batch2 distances
+                # Compute distances
                 distances = torch.cdist(batch1, batch2)
                 
-                # If same batch, only take upper triangular (excluding diagonal)
+                # If same batch, only take upper triangular
                 if i == j:
                     mask = torch.triu(torch.ones_like(distances), diagonal=1).bool()
                     batch_distances = distances[mask]
@@ -103,15 +79,57 @@ def compute_pairwise_distances_torch_gpu(memory_bank):
                     batch_max = batch_distances.max().item()
                     min_dist = min(min_dist, batch_min)
                     max_dist = max(max_dist, batch_max)
+                
+                pbar.update(1)
+    
+    # Calculate statistics
+    mean_dist = distance_sum / n_distances
+    variance = (distance_sum_sq / n_distances) - (mean_dist ** 2)
+    std_dist = np.sqrt(variance)
+    
+    print(f"  Range: [{min_dist:.4f}, {max_dist:.4f}]")
+    print(f"  Mean: {mean_dist:.4f}, Std: {std_dist:.4f}")
+    
+    # ========== SECOND PASS: Build exact histogram ==========
+    print(f"  Second pass: Building histogram with {n_bins} bins...")
+    
+    # Create histogram bins
+    # Add small epsilon to max to ensure all values fall within bins
+    eps = (max_dist - min_dist) * 1e-6
+    bin_edges = np.linspace(min_dist, max_dist + eps, n_bins + 1)
+    bin_counts = np.zeros(n_bins, dtype=np.int64)
+    
+    # Convert bin edges to torch tensor
+    bin_edges_torch = torch.from_numpy(bin_edges).to(device)
+    
+    # Second pass: fill histogram
+    with tqdm(total=total_batches * (total_batches + 1) // 2, desc="Second pass") as pbar:
+        for i in range(0, n_features, batch_size):
+            batch1 = memory_torch[i:min(i+batch_size, n_features)]
+            
+            for j in range(i, n_features, batch_size):
+                batch2 = memory_torch[j:min(j+batch_size, n_features)]
+                
+                # Compute distances
+                distances = torch.cdist(batch1, batch2)
+                
+                # If same batch, only take upper triangular
+                if i == j:
+                    mask = torch.triu(torch.ones_like(distances), diagonal=1).bool()
+                    batch_distances = distances[mask]
+                else:
+                    batch_distances = distances.flatten()
+                
+                if len(batch_distances) > 0:
+                    # Compute which bin each distance belongs to
+                    # searchsorted gives the insertion point, subtract 1 for bin index
+                    bin_indices = torch.searchsorted(bin_edges_torch[:-1], batch_distances, right=False)
+                    bin_indices = torch.clamp(bin_indices, 0, n_bins - 1)  # Safety clamp
                     
-                    # Keep samples for histogram
-                    if len(distance_samples) < 1_000_000:
-                        sample_size = min(1000, len(batch_distances), 1_000_000 - len(distance_samples))
-                        if sample_size > 0:
-                            # Take evenly spaced samples
-                            indices = torch.linspace(0, len(batch_distances)-1, sample_size, dtype=torch.long, device=device)
-                            sampled = batch_distances[indices].cpu().numpy()
-                            distance_samples.extend(sampled)
+                    # Count occurrences in each bin
+                    for bin_idx in range(n_bins):
+                        count = (bin_indices == bin_idx).sum().item()
+                        bin_counts[bin_idx] += count
                 
                 pbar.update(1)
     
@@ -120,25 +138,42 @@ def compute_pairwise_distances_torch_gpu(memory_bank):
         del memory_torch
         torch.cuda.empty_cache()
     
-    # Calculate final statistics
-    mean_dist = distance_sum / n_distances
-    variance = (distance_sum_sq / n_distances) - (mean_dist ** 2)
-    std_dist = np.sqrt(variance)
+    print(f"  Processed {n_distances:,} distances")
+    print(f"  Built exact histogram with {n_bins} bins")
     
-    # Convert samples to array
-    distance_samples = np.array(distance_samples)
+    # Find mode from histogram
+    mode_bin_idx = np.argmax(bin_counts)
+    mode_value = (bin_edges[mode_bin_idx] + bin_edges[mode_bin_idx + 1]) / 2
     
-    print(f"  Processed {n_distances:,} distances using PyTorch {device.upper()}")
-    print(f"  Mean: {mean_dist:.4f}, Std: {std_dist:.4f}, Min: {min_dist:.4f}, Max: {max_dist:.4f}")
-    print(f"  Histogram sample size: {len(distance_samples):,}")
+    print(f"  Mode (from histogram): {mode_value:.4f}")
     
-    return distance_samples, mean_dist, std_dist, min_dist, max_dist
+    return {
+        'mean': mean_dist,
+        'std': std_dist,
+        'min': min_dist,
+        'max': max_dist,
+        'mode': mode_value,
+        'n_distances': n_distances,
+        'histogram': {
+            'bin_edges': bin_edges,
+            'bin_counts': bin_counts,
+            'bin_centers': (bin_edges[:-1] + bin_edges[1:]) / 2
+        }
+    }
 
 
-def compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, max_dist):
-    """Compute confusion scores with different normalizations"""
-    # Find mode from samples
-    mode_dist = find_highest_peak(distance_samples)
+def compute_confusion_scores(distance_stats):
+    """Compute confusion scores using exact histogram data"""
+    mean_dist = distance_stats['mean']
+    std_dist = distance_stats['std']
+    min_dist = distance_stats['min']
+    max_dist = distance_stats['max']
+    mode_dist = distance_stats['mode']
+    
+    histogram = distance_stats['histogram']
+    bin_centers = histogram['bin_centers']
+    bin_counts = histogram['bin_counts']
+    bin_width = bin_centers[1] - bin_centers[0]
     
     # Raw difference
     mode_mean_diff = mode_dist - mean_dist
@@ -162,16 +197,21 @@ def compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, ma
         mean_position = 0.5
     
     # Position confusion: how far mean is from center (0.5)
-    position_confusion = max(0, mean_position - 0.5) * 2  # Scale to 0-1
+    position_confusion = max(0, mean_position - 0.5) * 4  # Scale to 0-2
     
-    # Density gap confusion (only if mode > mean)
+    # Density gap confusion using histogram counts
     density_gap_confusion = 0
     if mode_dist > mean_dist:
-        kde = gaussian_kde(distance_samples, bw_method='scott')
+        # Find bins for mean and mode
+        mean_bin_idx = np.searchsorted(histogram['bin_edges'][:-1], mean_dist, side='right') - 1
+        mean_bin_idx = np.clip(mean_bin_idx, 0, len(bin_counts) - 1)
+        mode_bin_idx = np.argmax(bin_counts)
         
-        density_at_mean = kde(mean_dist)[0]
-        density_at_mode = kde(mode_dist)[0]
+        # Get "density" (count) at mean and mode
+        density_at_mean = bin_counts[mean_bin_idx]
+        density_at_mode = bin_counts[mode_bin_idx]
         
+        # Calculate density gap
         if density_at_mode > 0:
             density_gap_confusion = 1 - (density_at_mean / density_at_mode)
         density_gap_confusion = max(0, density_gap_confusion)
@@ -192,24 +232,30 @@ def compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, ma
     }
 
 
-def plot_distance_distribution(distance_samples, scores, object_name, output_dir, auroc=None):
-    """Plot distance distribution with Gaussian fit - isolated visualization function"""
+def plot_distance_distribution(distance_stats, scores, object_name, output_dir, auroc=None):
+    """Plot exact distance distribution from histogram data"""
     plt.figure(figsize=(10, 6))
     
-    # Create histogram
-    n, bins, patches = plt.hist(distance_samples, bins=100, density=True, alpha=0.6, 
-                                color='blue', edgecolor='black', linewidth=0.5)
+    # Extract histogram data
+    histogram = distance_stats['histogram']
+    bin_centers = histogram['bin_centers']
+    bin_counts = histogram['bin_counts']
+    bin_edges = histogram['bin_edges']
+    n_distances = distance_stats['n_distances']
     
-    # Fit and plot Gaussian
+    # Convert counts to density
+    bin_width = bin_edges[1] - bin_edges[0]
+    densities = bin_counts / (n_distances * bin_width)
+    
+    # Plot histogram as bar chart
+    plt.bar(bin_centers, densities, width=bin_width, alpha=0.6, 
+            color='blue', edgecolor='black', linewidth=0.5, label='Exact distribution')
+    
+    # Fit and plot Gaussian for comparison
     mean, std = scores['mean'], scores['std']
-    x = np.linspace(distance_samples.min(), distance_samples.max(), 1000)
+    x = np.linspace(distance_stats['min'], distance_stats['max'], 1000)
     gaussian = (1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean)/std)**2)
     plt.plot(x, gaussian, 'r-', linewidth=2, label=f'Gaussian fit (μ={mean:.3f}, σ={std:.3f})')
-    
-    # Add KDE for density gap visualization
-    kde = gaussian_kde(distance_samples, bw_method='scott')
-    kde_values = kde(x)
-    plt.plot(x, kde_values, 'g-', linewidth=1.5, alpha=0.7, label='KDE')
     
     # Add vertical lines
     plt.axvline(mean, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean:.3f}')
@@ -224,7 +270,7 @@ def plot_distance_distribution(distance_samples, scores, object_name, output_dir
     plt.ylabel('Density', fontsize=12)
     
     auroc_str = f'{auroc:.3f}' if auroc is not None else 'N/A'
-    plt.title(f'{object_name} - NN Distance Distribution\n' + 
+    plt.title(f'{object_name} - NN Distance Distribution (Exact)\n' + 
               f'Combined Confusion Score: {scores["confusion_combined"]:.3f}, ' +
               f'AUROC: {auroc_str}', fontsize=14)
     plt.legend(loc='best')
@@ -282,18 +328,18 @@ class NormalizationTester:
         
         print(f"  Memory bank size: {memory_bank.shape}")
         
-        # Use PyTorch GPU for fast distance computation - NO SAMPLING, NO LIMITS!
-        distance_samples, mean_dist, std_dist, min_dist, max_dist = compute_pairwise_distances_torch_gpu(memory_bank)
+        # Use PyTorch GPU for exact histogram computation - NO SAMPLING!
+        distance_stats = compute_pairwise_distances_torch_gpu(memory_bank, n_bins=1000)
         
-        # Compute all confusion scores
-        scores = compute_confusion_scores(distance_samples, mean_dist, std_dist, min_dist, max_dist)
+        # Compute all confusion scores using exact histogram
+        scores = compute_confusion_scores(distance_stats)
         
         # Evaluate AUROC
         test_dir = self.mvtec_root / object_name / "test"
         auroc = self.evaluate_model(model, test_dir)
         
         # Plot distribution
-        plot_distance_distribution(distance_samples, scores, object_name, self.output_dir, auroc)
+        plot_distance_distribution(distance_stats, scores, object_name, self.output_dir, auroc)
         
         # Clean up
         del model
@@ -302,7 +348,7 @@ class NormalizationTester:
         
         return {
             'auroc': auroc,
-            'distance_samples': distance_samples,  # Keep samples for visualization
+            'distance_stats': distance_stats,  # Keep full stats for analysis
             **scores
         }
     
@@ -337,6 +383,7 @@ class NormalizationTester:
         
         print(f"Found {len(objects)} objects to analyze")
         print(f"Using PyTorch {'GPU' if torch.cuda.is_available() else 'CPU'} for distance calculations")
+        print("Using exact histogram approach (no sampling) for accurate mode and density calculations")
         
         for obj in tqdm(objects, desc="Analyzing objects"):
             obj_results = self.analyze_object(obj)
@@ -360,7 +407,7 @@ class NormalizationTester:
         for obj_name, obj_data in results.items():
             save_results[obj_name] = {}
             for key, value in obj_data.items():
-                if key not in ['distance_samples']:  # Skip the large distance array
+                if key not in ['distance_stats']:  # Skip the large stats dictionary
                     # Convert numpy types to Python native types
                     if isinstance(value, (np.float32, np.float64)):
                         save_results[obj_name][key] = float(value)
@@ -378,7 +425,7 @@ class NormalizationTester:
         self.create_comparison_plots(results)
         
         return results
-    
+        
     def create_comparison_plots(self, results):
         """Create comprehensive comparison visualizations"""
         # Extract data
@@ -439,7 +486,7 @@ class NormalizationTester:
         ax.set_title(f'Mean Position\nCorrelation: {corr_pos:.3f}', fontsize=14)
         ax.grid(True, alpha=0.3)
         
-        # Plot 3: Density gap confusion
+        # Plot 3: Density gap confusion (now using histogram)
         ax = axes[1, 0]
         ax.scatter(density_gap_confusion, aurocs, alpha=0.6, s=100, color='purple')
         corr_density = np.corrcoef(density_gap_confusion, aurocs)[0, 1]
@@ -447,9 +494,9 @@ class NormalizationTester:
         p = np.poly1d(z)
         x_line = np.linspace(density_gap_confusion.min(), density_gap_confusion.max(), 100)
         ax.plot(x_line, p(x_line), "r--", alpha=0.8)
-        ax.set_xlabel('Density Gap Confusion', fontsize=12)
+        ax.set_xlabel('Density Gap Confusion (Histogram)', fontsize=12)
         ax.set_ylabel('AUROC', fontsize=12)
-        ax.set_title(f'Density Gap\nCorrelation: {corr_density:.3f}', fontsize=14)
+        ax.set_title(f'Density Gap from Exact Histogram\nCorrelation: {corr_density:.3f}', fontsize=14)
         ax.grid(True, alpha=0.3)
         
         # Plot 4: Combined confusion score
@@ -465,7 +512,7 @@ class NormalizationTester:
         ax.set_title(f'Combined (Mean + Position + Density Gap)\nCorrelation: {corr_combined:.3f}', fontsize=14)
         ax.grid(True, alpha=0.3)
         
-        plt.suptitle('Confusion Score Methods Comparison', fontsize=16)
+        plt.suptitle('Confusion Score Methods Comparison (Using Exact Histograms)', fontsize=16)
         plt.tight_layout()
         plt.savefig(self.output_dir / 'all_methods_comparison.png', dpi=300)
         plt.close()
@@ -473,7 +520,7 @@ class NormalizationTester:
         # 2. Correlation strength comparison
         fig, ax = plt.subplots(figsize=(12, 8))
         
-        methods = ['By Mean', 'Position', 'Density Gap', 'Combined']
+        methods = ['By Mean', 'Position', 'Density Gap\n(Histogram)', 'Combined']
         correlations = [corr_mean, corr_pos, corr_density, corr_combined]
         colors = ['green', 'orange', 'purple', 'red']
         
@@ -483,10 +530,10 @@ class NormalizationTester:
         for bar, corr in zip(bars, correlations):
             height = bar.get_height()
             ax.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{corr:.3f}', ha='center', va='bottom', fontsize=12, fontweight='bold')
+                f'{corr:.3f}', ha='center', va='bottom', fontsize=12, fontweight='bold')
         
         ax.set_ylabel('Correlation with AUROC', fontsize=12)
-        ax.set_title('Correlation Strength Comparison', fontsize=14)
+        ax.set_title('Correlation Strength Comparison (Exact Histogram)', fontsize=14)
         ax.grid(True, alpha=0.3, axis='y')
         ax.set_ylim(min(correlations) - 0.1, 0)
         
@@ -506,7 +553,7 @@ class NormalizationTester:
         scatter = axes[0, 0].scatter(confusion_by_mean, density_gap_confusion, 
                                     alpha=0.6, c=aurocs, cmap='viridis', s=100)
         axes[0, 0].set_xlabel('Mode-Mean Confusion (by Mean)')
-        axes[0, 0].set_ylabel('Density Gap Confusion')
+        axes[0, 0].set_ylabel('Density Gap Confusion (Histogram)')
         axes[0, 0].set_title('Component Relationship (color = AUROC)')
         axes[0, 0].grid(True, alpha=0.3)
         plt.colorbar(scatter, ax=axes[0, 0])
@@ -515,7 +562,7 @@ class NormalizationTester:
         scatter = axes[0, 1].scatter(position_confusion, density_gap_confusion, 
                                     alpha=0.6, c=aurocs, cmap='viridis', s=100)
         axes[0, 1].set_xlabel('Position Confusion')
-        axes[0, 1].set_ylabel('Density Gap Confusion')
+        axes[0, 1].set_ylabel('Density Gap Confusion (Histogram)')
         axes[0, 1].set_title('Position vs Density Gap (color = AUROC)')
         axes[0, 1].grid(True, alpha=0.3)
         plt.colorbar(scatter, ax=axes[0, 1])
@@ -531,19 +578,19 @@ class NormalizationTester:
         
         # Density gap distribution
         axes[1, 1].hist(density_gap_confusion, bins=20, alpha=0.7, color='purple')
-        axes[1, 1].set_xlabel('Density Gap Confusion')
+        axes[1, 1].set_xlabel('Density Gap Confusion (Histogram)')
         axes[1, 1].set_ylabel('Count')
         axes[1, 1].set_title('Distribution of Density Gap Values')
         axes[1, 1].grid(True, alpha=0.3, axis='y')
         
-        plt.suptitle('Detailed Component Analysis', fontsize=14)
+        plt.suptitle('Detailed Component Analysis (Exact Histograms)', fontsize=14)
         plt.tight_layout()
         plt.savefig(self.output_dir / 'detailed_component_analysis.png', dpi=300)
         plt.close()
         
         # 4. Generate comparison report
         self.generate_comparison_report(results, corr_mean, corr_pos, corr_density, corr_combined)
-    
+        
     def generate_comparison_report(self, results, corr_mean, corr_pos, corr_density, corr_combined):
         """Generate detailed comparison report"""
         report_lines = [
