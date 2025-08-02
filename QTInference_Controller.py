@@ -84,7 +84,7 @@ class QTInference_Controller(QMainWindow):
             self.camera.set_fixed_display_size(640, 480)
 
         # Initialize robot
-        self.robot = QTRobot("192.168.1.11")
+        self.robot = QTRobot("192.168.1.7")
         self.robot.robot_complete.connect(self.on_robot_complete)
         self.robot.robot_error.connect(self.on_robot_error)
         

@@ -96,7 +96,7 @@ class QTCalibration_Controller(QMainWindow):
             # Initialize robot
 
         try:
-            self.robot = QTRobot("192.168.1.11")  # Update with your robot IP
+            self.robot = QTRobot("192.168.1.7")  # Update with your robot IP
             self.robot.robot_complete.connect(lambda: print("Robot movement complete"))
             self.robot.robot_error.connect(lambda err: print(f"Robot error: {err}"))
             # Enable keyboard focus for robot control
