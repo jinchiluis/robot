@@ -37,7 +37,8 @@ def main():
     robot.move_shoulder(ang=200, speed=0, wait_time=0.6)  # Move shoulder to center
     robot.move_elbow(ang=-200, speed=0, wait_time=1.6)  # Move elbow to center
     robot.move_shoulder(ang=10, speed=0, wait_time=1.6)  # Move shoulder to center
-    robot.move_elbow(ang=70, speed=0, wait_time=0.6)  # Move shoulder to center
+    #robot.move_elbow(ang=70, speed=0, wait_time=0.6)  # Move shoulder to center
+    robot.move_to(x=0, y=-450, z=150, t=-300, speed=0, wait_time=0.6)
     robot.move_hand(ang=200, speed=0, wait_time=0.6)  # Move hand to center
     robot.move_hand(ang=0, speed=0, wait_time=0.6)  # Move hand to center
     robot.move_hand(ang=200, speed=0, wait_time=0.6)
