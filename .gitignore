@@ -29,6 +29,7 @@ logs/
 checkpoints/
 models/
 mvtec/
+mvtec_orig/
 benchmark_results/
 feature_space_analysis/
 dino_confusion_analysis/

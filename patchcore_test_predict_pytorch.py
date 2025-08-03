@@ -364,7 +364,7 @@ class NormalizationTester:
             category_name = category_dir.name
             
             for img_path in category_dir.glob('*'):
-                if img_path.suffix.lower() in ['.png', '.jpg', '.jpeg']:
+                if img_path.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp']:
                     try:
                         result = model.predict(str(img_path), return_heatmap=False)
                         all_scores.append(result['anomaly_score'])

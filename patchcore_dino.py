@@ -516,7 +516,7 @@ class SimpleImageDataset(Dataset):
         
         # Collect all image files
         all_images = []
-        extensions = ['*.jpg', '*.png', '*.jpeg', '*.JPEG', '*.JPG', '*.PNG']
+        extensions = ['*.jpg', '*.png', '*.jpeg', '*.bmp' '*.JPEG', '*.JPG', '*.PNG', '*.BMP']
         for ext in extensions:
             all_images.extend(self.root_dir.glob(ext))
         

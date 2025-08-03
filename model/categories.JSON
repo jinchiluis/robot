@@ -8,7 +8,8 @@
         "jet2",
         "jet3",
         "blubb",
-        "xiao_yi"
+        "xiao_yi",
+        "ledi"
       ],
       "robot_action": "process_red_plane",
       "color_code": "#FF6B6B"
@@ -21,7 +22,8 @@
         "jingang",
         "langlang",
         "usb",
-        "xue_er"
+        "xue_er",
+        "xuer"
       ],
       "robot_action": "process_blue_plane",
       "color_code": "#4ECDC4"
