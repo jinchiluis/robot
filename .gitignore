@@ -30,6 +30,7 @@ checkpoints/
 models/
 mvtec/
 mvtec_orig/
+mvtec_visa/
 benchmark_results/
 feature_space_analysis/
 dino_confusion_analysis/
