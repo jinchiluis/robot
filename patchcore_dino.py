@@ -24,7 +24,7 @@ except ImportError:
 
 
 class PatchCore:
-    def __init__(self, backbone='dinov2_vitb14'):
+    def __init__(self, backbone='dinov2_vits14'):
         if torch.cuda.is_available():
             self.device = 'cuda'
         else:
@@ -42,7 +42,7 @@ class PatchCore:
         valid_backbones = ['dinov2_vits14', 'dinov2_vitb14', 'dinov2_vitl14', 'dinov2_vitg14']
         if backbone not in valid_backbones:
             print(f"Warning: {backbone} not recognized. Using dinov2_vitb14")
-            backbone = 'dinov2_vitb14'
+            backbone = 'dinov2_vits14'
         
         self.backbone_name = backbone
         print(f"Loading DINOv2 model: {backbone}")
@@ -84,7 +84,7 @@ class PatchCore:
         
         # Image preprocessing
         # DINOv2 expects images divisible by 14 (patch size)
-        self.image_size = 518  # 518 = 37 * 14
+        self.image_size = 224  # 518 = 37 * 14
         self.transform_train = transforms.Compose([
             transforms.Resize((self.image_size, self.image_size)),
             transforms.ToTensor(),
